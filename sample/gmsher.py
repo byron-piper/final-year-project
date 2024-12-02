@@ -1,10 +1,12 @@
 import math
-import json
+import logging
 
+import numpy as np
 import gmsh
 
-import parameters
-from aerofoil_gen import generate_naca4
+from helper import remove_duplicate_coords
+import parameters as params
+from aerofoil_gen import generate_naca4, aerofoil_to_3element
 
 class gmsh_wrapper():
     """
@@ -25,7 +27,7 @@ class gmsh_wrapper():
             return result
         return wrapped_func
 
-def add_aerofoil(geo: gmsh_wrapper, coords: list, aoa: float, mesh_size: float):
+def add_aerofoil(geo: gmsh_wrapper, coords: list, aoa: float, mesh_size: float, loop: bool = True):
     """
     Takes in a list of [x, y, z] coordinates and creates .gmsh describing the aerofoil curve.
     """
@@ -35,37 +37,47 @@ def add_aerofoil(geo: gmsh_wrapper, coords: list, aoa: float, mesh_size: float):
     # [ cos(AoA)  sin(AoA) ]
     # [ -sin(AoA) cos(AoA) ]
     #
+
+    points = []
+    lines = []
     aoa_radians = math.radians(aoa)
     for i, coord in enumerate(coords):
         x = coord[0] * math.cos(aoa_radians) + coord[1] * math.sin(aoa_radians)
         y = -coord[0] * math.sin(aoa_radians) + coord[1] * math.cos(aoa_radians)
-        coords[i] = [x, y, coord[2]]
 
-    points = []
-    for coord in coords:
-        points.append(geo.addPoint(coord[0], coord[1], coord[2], mesh_size))
-    return points, geo.addSpline(points)
+        points.append(geo.addPoint(x, y, coord[2], mesh_size))
+        if i > 0: 
+            lines.append(geo.addLine(points[i - 1], points[i]))
+    if loop: 
+        lines.append(geo.addLine(points[0], points[-1]))
+    return points, lines
 
 def construct_gmsh():
     #region ==== UNPACK PARAMETERS ==== #
 
-    project_id = parameters.project_id
+    project_id = params.project_id
 
     # Aerofoil parameters
-    naca = parameters.naca
-    num_points = parameters.num_points
-    chord = parameters.chord
+    naca = params.naca
+    num_points = params.num_points
+    chord = params.chord
+
+    # High Lift Devices parameters
+    slat_geom = params.slat_geom
+    flap_geom = params.flap_geom
 
     # Gmsh parameters
-    mesh_size = parameters.mesh_size
-    domain_radius = parameters.domain_radius
-    domain_extension = parameters.domain_extension
-    AoA = parameters.AoA
-    refinement_offset = parameters.refinement_offset
+    mesh_size = params.mesh_size
+    domain_radius = params.domain_radius
+    domain_extension = params.domain_extension
+    AoA = params.AoA
+    refinement_offset = params.refinement_offset
 
     #endregion
 
     # ==== INITIALISE GMSH PROJECT ==== #
+
+    logging.info(f"Initialising GMSH with Project ID = {project_id}")
 
     gmsh.initialize()
     gmsh.model.add(project_id)
@@ -75,15 +87,40 @@ def construct_gmsh():
 
     # ==== GENERATE AEROFOIL COORDINATES AND ADD TO MESH ==== #
 
-    aerofoil_coords = generate_naca4(chord=chord, max_camber=naca[0], max_camber_pos=naca[1], thickness=naca[2], num_points=num_points)
+    aerofoil_coords = generate_naca4(chord=chord, M=naca[0], P=naca[1], T=naca[2], num_points=num_points)
+
+    aerofoil_coords, slat_coords, flap_coords, P0, P1, P2, P3 = aerofoil_to_3element(chord, aerofoil_coords, slat_geom, flap_geom)
+    
+    logging.info(f"Adding aerofoil elements to GMSH .geo file")
 
     aerofoil_points, _ = add_aerofoil(geo, aerofoil_coords, AoA, mesh_size)
+
+    add_aerofoil(geo, slat_coords, AoA, mesh_size)
+    #add_aerofoil(geo, flap_coords, AoA, mesh_size)
+
+    if params.debug_enabled:
+        logging.debug(f"Drawing bezier control lines")
+
+        P0_point = geo.addPoint(P0[0], P0[1], 0)
+        P1_point = geo.addPoint(P1[0], P1[1], 0)
+        P2_point = geo.addPoint(P2[0], P2[1], 0)
+        P3_point = geo.addPoint(P3[0], P3[1], 0)
+
+        control_line_lwr = geo.addLine(P0_point, P1_point)
+        control_line_lwr = geo.addLine(P2_point, P3_point)
+
+    logging.info(f"Writing GMSH .geo file with filename = {project_id}.geo_unrolled")
+
+    gmsh.write(f"{project_id}.geo_unrolled")
+    gmsh.finalize()
+
+    return
 
     #region ==== ADD DOMAIN POINTS ==== #
 
     # Refinement zone
-    leading_edge = aerofoil_points[0]
-    trailing_edge = aerofoil_points[int(len(aerofoil_points)/2) - 1]
+    leading_edge = aerofoil_points[int(len(aerofoil_points)/2)+1]
+    trailing_edge = aerofoil_points[0]
     point_rf_1 = geo.addPoint(0, refinement_offset, 0, mesh_size)
     point_rf_2 = geo.addPoint(chord, refinement_offset, 0, mesh_size)
     point_rf_3 = geo.addPoint(-refinement_offset, 0, 0, mesh_size)
