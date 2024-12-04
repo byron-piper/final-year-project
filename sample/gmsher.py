@@ -6,7 +6,7 @@ import gmsh
 
 from helper import remove_duplicate_coords
 import parameters as params
-from aerofoil_gen import generate_naca4, aerofoil_to_3element, rotate_aerofoil, translate_aerofoil
+from aerofoil_gen import generate_naca4, aerofoil_to_3element, rotate_element
 
 class gmsh_wrapper():
     """
@@ -27,7 +27,7 @@ class gmsh_wrapper():
             return result
         return wrapped_func
 
-def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, loop: bool = True):
+def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, total_lines:int, loop: bool = True):
     """
     Takes in a list of [x, y, z] coordinates and creates .gmsh describing the aerofoil curve.
     """
@@ -38,6 +38,8 @@ def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, loop: bool =
     # [ -sin(AoA) cos(AoA) ]
     #
 
+    start_line_idx = total_lines + 1
+
     points = []
     lines = []
     for i, coord in enumerate(coords):
@@ -46,9 +48,13 @@ def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, loop: bool =
             lines.append(geo.addLine(points[i - 1], points[i]))
     if loop: 
         lines.append(geo.addLine(points[0], points[-1]))
-    return points, lines
+
+    total_lines = len(lines)
+
+    return points, total_lines, (start_line_idx, total_lines)
 
 def construct_gmsh():
+    total_lines = 0
     #region ==== UNPACK PARAMETERS ==== #
 
     project_id = params.project_id
@@ -84,16 +90,17 @@ def construct_gmsh():
     # ==== GENERATE AEROFOIL COORDINATES AND ADD TO MESH ==== #
 
     aerofoil_coords = generate_naca4(chord=chord, M=naca[0], P=naca[1], T=naca[2], num_points=num_points)
+
+    aerofoil_coords = rotate_element(aerofoil_coords, AoA)
     
-    aerofoil_coords, slat_coords, flap_coords, pivots, offsets = aerofoil_to_3element(chord, aerofoil_coords, slat_geom, flap_geom)
+    aerofoil_coords, slat_coords, flap_coords = aerofoil_to_3element(chord, aerofoil_coords, slat_geom, flap_geom)
 
     logging.info(f"Transforming aerofoil, slat and flap coordinates")
 
-    slat_coords = translate_aerofoil(slat_coords, offsets["slat"])
-    flap_coords = translate_aerofoil(flap_coords, offsets["flap"])
+    #slat_coords = translate_aerofoil(slat_coords, offsets["slat"])
+    #flap_coords = translate_aerofoil(flap_coords, offsets["flap"])
 
-    slat_coords = rotate_aerofoil(slat_coords, slat_geom["deflection"], pivots["slat"])
-    flap_coords = rotate_aerofoil(flap_coords, flap_geom["deflection"], pivots["flap"])
+    #slat_coords = translate_aerofoil(slat_coords, offsets["slat"])
 
     #aerofoil_coords = rotate_aerofoil(aerofoil_coords, AoA)
     #slat_coords = rotate_aerofoil(slat_coords, AoA)
@@ -101,10 +108,10 @@ def construct_gmsh():
 
     logging.info(f"Adding aerofoil elements to GMSH .geo file")
 
-    aerofoil_points, _ = add_aerofoil(geo, aerofoil_coords, AoA, mesh_size)
+    aerofoil_points, total_lines, (aerofoil_start, aerofoil_end) = add_aerofoil(geo, aerofoil_coords, mesh_size, total_lines)
 
-    add_aerofoil(geo, slat_coords, mesh_size)
-    add_aerofoil(geo, flap_coords, mesh_size)
+    slat_points, total_lines, (slat_start, slat_end) = add_aerofoil(geo, slat_coords, mesh_size, total_lines)
+    flap_points, total_lines, (flap_start, flap_end) = add_aerofoil(geo, flap_coords, mesh_size, total_lines)
 
     if params.debug_enabled:
         logging.debug(f"Drawing bezier control lines")
@@ -118,6 +125,9 @@ def construct_gmsh():
         control_line_lwr = geo.addLine(P2_point, P3_point)
 
     logging.info(f"Writing GMSH .geo file with filename = {project_id}.geo_unrolled")
+
+    geo.addCurveLoop(list(range(aerofoil_start, aerofoil_end)), 1)
+    geo.addPlaneSurface([1], 1)
 
     gmsh.write(f"{project_id}.geo_unrolled")
     gmsh.finalize()

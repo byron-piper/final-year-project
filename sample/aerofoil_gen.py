@@ -259,38 +259,53 @@ def aerofoil_to_3element(chord: float, coords: np.ndarray, slat_geom: list, flap
     T_prime = T + np.array([slat_geom["x_overlap"]*chord - T[0], 0, 0])
     Q_idx = closest_idx(aerofoil_coords[:, 0], T_prime[0])
     Q_m, Q_c = slope_eq_at_idx(aerofoil_coords, Q_idx)
-    Q = np.array([
-        T_prime[0],
-        Q_m*T_prime[0] + Q_c,
+    
+    Q_normal_theta = math.atan(-1 / Q_m)
+
+    Q_prime = np.array([
+        T_prime[0] - slat_geom["y_gap"]*chord * math.cos(Q_normal_theta),
+        Q_m*T_prime[0] + Q_c - slat_geom["y_gap"]*chord * math.sin(Q_normal_theta),
         0
     ])
 
-    # Determine offsets used to place the high lift devices in their deployed position
-    offsets = {
-        "slat": np.array([
-            slat_geom["x_overlap"]*chord - T[0],
-            Q[1] + slat_geom["y_gap"]*chord - T[1],
-            0
-        ]),
-        "flap": np.array([
-            C[0] - B[0] - flap_geom["x_overlap"]*chord, 
-            -flap_geom["y_gap"]*chord, 
-            0
-        ])
-    }
+    C_prime = aerofoil_coords[0]
 
-    # Determine points used to pivot high lift devices when rotating
-    pivots = {
-        "slat": T + offsets["slat"],
-        "flap": B + offsets["flap"]
-    }
+    slat_offset = Q_prime - T
+    flap_offset = np.array([
+        C_prime[0] - B[0] - flap_geom["x_overlap"]*chord,
+        0,
+        0
+    ])
 
     #endregion
 
-    return aerofoil_coords, slat_coords, flap_coords, pivots, offsets
+    #region # ==== APPLY TRANSFORMATIONS ==== #
 
+    slat_coords = rotate_element(slat_coords, slat_geom["deflection"], T)
+    flap_coords = rotate_element(flap_coords, flap_geom["deflection"], B)
 
-def rotate_aerofoil(coords: np.ndarray, aoa: float, pivot: np.ndarray = np.zeros(shape=())):
+    slat_coords = translate_element(slat_coords, slat_offset)
+    flap_coords = translate_element(flap_coords, flap_offset)
+
+    flap_upr_le = rotate_element(bezier_BMNC, flap_geom["deflection"], B)
+    flap_upr_le = translate_element(flap_upr_le, flap_offset)
+
+    Z_idx = closest_idx(flap_upr_le[:, 0], C_prime[0])
+    Z_y = flap_upr_le[Z_idx][1]
+
+    flap_offset = np.array([
+        0,
+        (C_prime[1] - Z_y) - flap_geom["y_gap"]*chord,
+        0
+    ])
+
+    flap_coords = translate_element(flap_coords, flap_offset)
+
+    #endregion
+
+    return aerofoil_coords, slat_coords, flap_coords
+
+def rotate_element(coords: np.ndarray, aoa: float, pivot: np.ndarray = np.zeros(shape=())):
     aoa_radians = math.radians(aoa)
     rotation_matrix = [
         [math.cos(aoa_radians), math.sin(aoa_radians), 0],
@@ -309,5 +324,6 @@ def rotate_aerofoil(coords: np.ndarray, aoa: float, pivot: np.ndarray = np.zeros
     
     return new_coords
 
-def translate_aerofoil(coords: np.ndarray, offset: np.ndarray):
+def translate_element(coords: np.ndarray, offset: np.ndarray):
     return coords + offset
+    

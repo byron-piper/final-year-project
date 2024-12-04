@@ -19,8 +19,8 @@ slat_geom = {
     "Vx": 0.6,
     "Wx": 0.25,
     "x_overlap": 0.01,
-    "y_gap": 0.02,
-    "deflection": 15
+    "y_gap": 0.027,
+    "deflection": 20
 }
 
 flap_geom = {
@@ -48,7 +48,7 @@ flap_geom = {
 mesh_size = 0.2
 domain_radius = 5
 domain_extension = 15
-AoA = -15
+AoA = 0
 N_inlet = 30
 refinement_offset = 0.35 * chord
 
