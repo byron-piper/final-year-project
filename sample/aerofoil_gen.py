@@ -247,7 +247,7 @@ def aerofoil_to_3element(chord: float, coords: np.ndarray, slat_geom: list, flap
 
     slat_coords = np.concat((slat_leading_edge, bezier_TVWU[::-1]))
 
-    aerofoil_coords = np.concat((coords[C_idx:S_idx], bezier_SS1P1P, bezier_BMNC[P_idx:][1:-1]))
+    aerofoil_coords = np.concat((coords[C_idx:S_idx], bezier_SS1P1P, bezier_BMNC[P_idx:][1:]))
 
     #endregion
 
@@ -303,7 +303,7 @@ def aerofoil_to_3element(chord: float, coords: np.ndarray, slat_geom: list, flap
 
     #endregion
 
-    return aerofoil_coords, slat_coords, flap_coords
+    return aerofoil_coords, slat_coords, flap_coords, len(slat_leading_edge)
 
 def rotate_element(coords: np.ndarray, aoa: float, pivot: np.ndarray = np.zeros(shape=())):
     aoa_radians = math.radians(aoa)

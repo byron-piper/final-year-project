@@ -27,7 +27,7 @@ class gmsh_wrapper():
             return result
         return wrapped_func
 
-def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, total_lines:int, loop: bool = True):
+def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, loop: bool = True):
     """
     Takes in a list of [x, y, z] coordinates and creates .gmsh describing the aerofoil curve.
     """
@@ -38,20 +38,19 @@ def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, total_lines:
     # [ -sin(AoA) cos(AoA) ]
     #
 
-    start_line_idx = total_lines + 1
-
     points = []
     lines = []
     for i, coord in enumerate(coords):
+        if i == len(coords) - 1:
+            break
         points.append(geo.addPoint(coord[0], coord[1], coord[2], mesh_size))
         if i > 0: 
             lines.append(geo.addLine(points[i - 1], points[i]))
     if loop: 
-        lines.append(geo.addLine(points[0], points[-1]))
+        lines.append(geo.addLine(points[-1], points[0]))
+    points.append(points[0])
 
-    total_lines = len(lines)
-
-    return points, total_lines, (start_line_idx, total_lines)
+    return points, lines
 
 def construct_gmsh():
     total_lines = 0
@@ -93,7 +92,7 @@ def construct_gmsh():
 
     aerofoil_coords = rotate_element(aerofoil_coords, AoA)
     
-    aerofoil_coords, slat_coords, flap_coords = aerofoil_to_3element(chord, aerofoil_coords, slat_geom, flap_geom)
+    aerofoil_coords, slat_coords, flap_coords, slat_le = aerofoil_to_3element(chord, aerofoil_coords, slat_geom, flap_geom)
 
     logging.info(f"Transforming aerofoil, slat and flap coordinates")
 
@@ -108,10 +107,10 @@ def construct_gmsh():
 
     logging.info(f"Adding aerofoil elements to GMSH .geo file")
 
-    aerofoil_points, total_lines, (aerofoil_start, aerofoil_end) = add_aerofoil(geo, aerofoil_coords, mesh_size, total_lines)
+    aerofoil_points, aerofoil_lines = add_aerofoil(geo, aerofoil_coords, mesh_size)
 
-    slat_points, total_lines, (slat_start, slat_end) = add_aerofoil(geo, slat_coords, mesh_size, total_lines)
-    flap_points, total_lines, (flap_start, flap_end) = add_aerofoil(geo, flap_coords, mesh_size, total_lines)
+    slat_points, slat_lines = add_aerofoil(geo, slat_coords, mesh_size)
+    flap_points, flap_lines = add_aerofoil(geo, flap_coords, mesh_size)
 
     if params.debug_enabled:
         logging.debug(f"Drawing bezier control lines")
@@ -126,11 +125,56 @@ def construct_gmsh():
 
     logging.info(f"Writing GMSH .geo file with filename = {project_id}.geo_unrolled")
 
-    geo.addCurveLoop(list(range(aerofoil_start, aerofoil_end)), 1)
-    geo.addPlaneSurface([1], 1)
+    # Create Bounds
+
+    f = geo.addPoint(-1, 0, 0)
+    tl = geo.addPoint(-1, 5, 0)
+    tr = geo.addPoint(6, 5, 0)
+    bl = geo.addPoint(-1, -5, 0)
+    br = geo.addPoint(6, -5, 0)
+
+    tline = geo.addLine(tl, tr)
+    backline = geo.addLine(tr, br)
+    bline = geo.addLine(bl, br)
+
+    front = geo.addCircleArc(tl, f, bl)
+
+    #aerofoil_spline = geo.addSpline(aerofoil_points)
+    slat_spline = geo.addSpline(slat_points)
+    flap_spline = geo.addSpline(flap_points)
 
     gmsh.write(f"{project_id}.geo_unrolled")
     gmsh.finalize()
+
+    aerofoil_points_str = ",".join([str(point) for point in aerofoil_points])
+    aerofoil_lines_str = ",".join([str(line) for line in aerofoil_lines])
+    slat_lines_str = ",".join([str(line) for line in slat_lines])
+    flap_lines_str = ",".join([str(line) for line in flap_lines])
+
+    data = [
+        f"Curve Loop(1) = {{{tline}, {backline}, -{bline}, -{front}}};\n",
+        f"Curve Loop(2) = {{{aerofoil_lines_str}}};\n",
+        f"Curve Loop(3) = {{{slat_lines_str}}};\n",
+        f"Curve Loop(4) = {{{flap_lines_str}}};\n",
+        f"Plane Surface(1) = {{1, 2, 3, 4}};\n",
+        "Transfinite Curve {1} = 100 Using Bump 10;\n"
+        "Transfinite Curve {2} = 100 Using Bump 10;\n"
+        "Field[1] = BoundaryLayer;\n",
+        "Field[1].Quads = 1;\n",
+        "Field[1].Thickness = 0.01;\n",
+        f"Field[1].FanPointsList = {{{aerofoil_points[0]}, {slat_points[0]}, {flap_points[0]}, {slat_le-1}}};\n"
+        f"Field[1].EdgesList = {{{aerofoil_lines_str}, {slat_lines_str}, {flap_lines_str}}};\n",
+        "Field[1].NbLayers = 5;\n",
+        "Field[1].Ratio = 1.26;\n",
+        "Field[1].hwall_n = 1.94e-05;\n",
+        "Field[1].hfar = 0.01;\n",
+        "Field[1].IntersectMetrics = 1;\n",
+        "BoundaryLayer Field = 1;\n",
+        "Mesh.BoundaryLayerFanElements = 10;"
+    ]
+
+    with open(f"{project_id}.geo_unrolled", "a") as f:
+        f.writelines(data)
 
     return
 
