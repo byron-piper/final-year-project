@@ -6,8 +6,7 @@ import logging
 import random
 
 import parameters
-from gmsher import construct_gmsh
-from aerofoil_gen import generate_naca4
+from gmsher import construct_gmsh, test
 
 def log_uncaught_exceptions(exc_type, exc_value, exc_tb):
     if exc_value != KeyboardInterrupt:
@@ -52,7 +51,8 @@ def main():
         logging.info(f'Updated parameters:\nSlat geom = {parameters.slat_geom}\nFlap geom = {parameters.flap_geom}')
 
     logging.info('Constructing the GMSH .geo file.')
-    construct_gmsh()
+    #construct_gmsh()
+    test()
 
 if __name__ == '__main__':
     sys.excepthook = log_uncaught_exceptions

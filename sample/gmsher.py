@@ -4,9 +4,8 @@ import logging
 import numpy as np
 import gmsh
 
-from helper import remove_duplicate_coords
 import parameters as params
-from aerofoil_gen import generate_naca4, aerofoil_to_3element, rotate_element
+from aerofoil_utils import generate_naca4, aerofoil_to_3element, rotate_element, load_aerofoil_3element
 
 class gmsh_wrapper():
     """
@@ -53,7 +52,6 @@ def add_aerofoil(geo: gmsh_wrapper, coords: list, mesh_size: float, loop: bool =
     return points, lines
 
 def construct_gmsh():
-    total_lines = 0
     #region ==== UNPACK PARAMETERS ==== #
 
     project_id = params.project_id
@@ -240,8 +238,21 @@ def construct_gmsh():
     gmsh.write(f"{project_id}.geo_unrolled")
     gmsh.finalize()
 
+def test():
+    gmsh.initialize()
+    gmsh.model.add("30P30N")
+
+    geo = gmsh_wrapper(gmsh.model.geo)
+
+    aerofoil_coords = load_aerofoil_3element("aerofoils/30P30N.json")
+
+    add_aerofoil(geo, aerofoil_coords, params.mesh_size)
+
+    gmsh.write(f"30P30N.geo_unrolled")
+    gmsh.finalize()
+
 def main():
-    construct_gmsh()
+    test()
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,6 @@
 import math
 import logging
+import json
 
 import numpy as np
 
@@ -327,3 +328,12 @@ def rotate_element(coords: np.ndarray, aoa: float, pivot: np.ndarray = np.zeros(
 def translate_element(coords: np.ndarray, offset: np.ndarray):
     return coords + offset
     
+def load_aerofoil_3element(filename: str):
+    aerofoil_data = {}
+
+    with open(filename, "r") as f:
+        aerofoil_data = json.load(f)
+
+    aerofoil_coords = np.array(aerofoil_data["coords"]["base"])
+
+    return aerofoil_coords
