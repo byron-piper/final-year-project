@@ -1,0 +1,36 @@
+{
+	"geometry": {
+		"domain_radius": 10,
+		"domain_length": 10
+	},
+	"mesh": {
+		"overwrite": false,
+		"global_sizing": {
+			"cells_per_gap": 1,
+			"max_element_size": 1.25,
+			"min_element_size": 2.5e-4,
+			"global_growth_rate": 1.1
+		},
+		"local_sizing": {
+			"boi_cells_per_gap": 1,
+			"boi_curvature_normal_angle": 18,
+			"boi_execution": "Edge Size",
+			"boi_growth_rate": 1.2,
+			"boi_size": 2.5e-4
+		},
+		"boundary_layers": {
+			"bl_num_layers": 20,
+			"bl_first_height": 1.055e-6,
+			"bl_max_height": 1,
+			"bl_growth_rate": 1.2
+		}
+	},
+	"i/o": {
+		"coords_folder": "E:\\ANSYS Inc\\working\\coordinates",
+		"geometries_folder": "E:\\ANSYS Inc\\working\\geometries",
+		"meshes_folder": "E:\\ANSYS Inc\\working\\meshes",
+		"cases_folder": "E:\\ANSYS Inc\\working\\cases",
+		"results_folder": "E:\\ANSYS Inc\\working\\results",
+		"logs_folder": "E:\\ANSYS Inc\\working\\logs"
+	}
+}

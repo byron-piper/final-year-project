@@ -1,0 +1,110 @@
+{
+	"read_mesh": [
+		"(cx-gui-do cx-activate-item \"MenuBar*ReadSubMenu*Mesh...\")",
+		"(cx-gui-do cx-activate-item \"Read Mesh Options*PanelButtons*PushButton1(OK)\")",
+		"(cx-gui-do cx-set-file-dialog-entries \"Select File\" '( \"E:/ANSYS Inc/working/meshes/30P30N-D.msh.h5\") \"CFF Mesh Files (*.msh.h5 )\")"
+	],
+	"set_model": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list ))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Models|Viscous (Spalart-Allmaras (1 eqn))\"))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Models|Viscous (Spalart-Allmaras (1 eqn))\"))",
+		"(cx-gui-do cx-activate-item \"NavigationPane*Frame2*Table1*List_Tree2\")",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Models|Viscous (Spalart-Allmaras (1 eqn))\"))",
+		"(cx-gui-do cx-activate-item \"Viscous Model*PanelButtons*PushButton1(OK)\")"
+	],
+	"set_inlet": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Boundary Conditions\"))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Boundary Conditions\"))",
+		"(cx-gui-do cx-activate-item \"NavigationPane*Frame2*Table1*List_Tree2\")",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Boundary Conditions\"))",
+		"(cx-gui-do cx-activate-item \"Boundary Conditions*Table1*Table3*Table4*ButtonBox1*PushButton1(Edit)\")",
+		"(cx-gui-do cx-set-list-selections \"Velocity Inlet*Frame2*Frame2*Frame1(Momentum)*Table1*DropDownList7(Velocity Specification Method)\" '( 1))",
+		"(cx-gui-do cx-enable-apply-button \"Velocity Inlet\")",
+		"(cx-gui-do cx-activate-item \"Velocity Inlet*Frame2*Frame2*Frame1(Momentum)*Table1*DropDownList7(Velocity Specification Method)\")",
+		"(cx-gui-do cx-set-expression-entry \"Velocity Inlet*Frame2*Frame2*Frame1(Momentum)*Table1*Table17*ExpressionEntry1(X-Velocity)\" '(\"73\" . 0))",
+		"(cx-gui-do cx-set-expression-entry \"Velocity Inlet*Frame2*Frame2*Frame1(Momentum)*Table1*Table18*ExpressionEntry1(Y-Velocity)\" '(\"0\" . 0))",
+		"(cx-gui-do cx-activate-item \"Velocity Inlet*PanelButtons*PushButton1(OK)\")",
+		"(cx-gui-do cx-activate-item \"Velocity Inlet*PanelButtons*PushButton2(Cancel)\")"
+	],
+	"update_reference_values": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Reference Values\"))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Reference Values\"))",
+		"(cx-gui-do cx-activate-item \"NavigationPane*Frame2*Table1*List_Tree2\")",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Setup|Reference Values\"))",
+		"(cx-gui-do cx-set-list-selections \"Reference Values*DropDownList1(Compute from)\" '( 3))",
+		"(cx-gui-do cx-activate-item \"Reference Values*DropDownList1(Compute from)\")",
+		"(cx-gui-do cx-set-list-selections \"Reference Values*DropDownList4(Reference Zone)\" '( 1))",
+		"(cx-gui-do cx-activate-item \"Reference Values*DropDownList4(Reference Zone)\")"
+	],
+	"set_methods": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Methods\"))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Methods\"))",
+		"(cx-gui-do cx-activate-item \"NavigationPane*Frame2*Table1*List_Tree2\")",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Methods\"))",
+		"(cx-gui-do cx-set-list-selections \"Solution Methods*Table1*Table3(Spatial Discretization)*DropDownList4(Modified Turbulent Viscosity)\" '( 1))",
+		"(cx-gui-do cx-activate-item \"Solution Methods*Table1*Table3(Spatial Discretization)*DropDownList4(Modified Turbulent Viscosity)\")"
+	],
+	"create_cl_report": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Report Definitions\"))",
+		"(cx-gui-do cx-list-tree-right-click \"NavigationPane*Frame2*Table1*List_Tree2\" )",
+		"(cx-gui-do cx-activate-item \"MenuBar*Force ReportSubMenu*Lift...\")",
+		"(cx-gui-do cx-set-text-entry \"Lift Report Definition*Table1*TextEntry3(Name)\" \"cl-report\")",
+		"(cx-gui-do cx-activate-item \"Lift Report Definition*Table1*TextEntry3(Name)\")",
+		"(cx-gui-do cx-set-real-entry-list \"Lift Report Definition*Table1*Table1*Table2*Table2(Force Vector)*RealEntry2(X)\" '( 0))",
+		"(cx-gui-do cx-set-real-entry-list \"Lift Report Definition*Table1*Table1*Table2*Table2(Force Vector)*RealEntry1(Y)\" '( 1))",
+		"(cx-gui-do cx-set-list-selections \"Lift Report Definition*Table1*Table2*List2(Zones)\" '( 0))",
+		"(cx-gui-do cx-activate-item \"Lift Report Definition*Table1*Table2*List2(Zones)\")",
+		"(cx-gui-do cx-activate-item \"Lift Report Definition*PanelButtons*PushButton1(OK)\")"
+	],
+	"create_cd_report": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Report Definitions\"))",
+		"(cx-gui-do cx-list-tree-right-click \"NavigationPane*Frame2*Table1*List_Tree2\" )",
+		"(cx-gui-do cx-activate-item \"MenuBar*Force ReportSubMenu*Drag...\")",
+		"(cx-gui-do cx-set-text-entry \"Drag Report Definition*Table1*TextEntry3(Name)\" \"cd-report\")",
+		"(cx-gui-do cx-activate-item \"Drag Report Definition*Table1*TextEntry3(Name)\")",
+		"(cx-gui-do cx-set-real-entry-list \"Drag Report Definition*Table1*Table1*Table2*Table2(Force Vector)*RealEntry2(X)\" '( 1))",
+		"(cx-gui-do cx-set-real-entry-list \"Drag Report Definition*Table1*Table1*Table2*Table2(Force Vector)*RealEntry2(Y)\" '( 0))",
+		"(cx-gui-do cx-set-list-selections \"Drag Report Definition*Table1*Table2*List2(Zones)\" '( 0))",
+		"(cx-gui-do cx-activate-item \"Drag Report Definition*Table1*Table2*List2(Zones)\")",
+		"(cx-gui-do cx-activate-item \"Drag Report Definition*PanelButtons*PushButton1(OK)\")"
+	],
+	"set_residuals_thresholds": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Monitors|Residual\"))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Monitors|Residual\"))",
+		"(cx-gui-do cx-list-tree-right-click \"NavigationPane*Frame2*Table1*List_Tree2\" )",
+		"(cx-gui-do cx-activate-item \"MenuBar*PopupMenuTree-Residual*Edit...\")",
+		"(cx-gui-do cx-set-real-entry-list \"Residual Monitors*Table1*Table2*Table1*Table1(Equations)*RealEntry11\" '( 1e-06))",
+		"(cx-gui-do cx-set-real-entry-list \"Residual Monitors*Table1*Table2*Table1*Table1(Equations)*RealEntry17\" '( 1e-06))",
+		"(cx-gui-do cx-set-real-entry-list \"Residual Monitors*Table1*Table2*Table1*Table1(Equations)*RealEntry23\" '( 1e-06))",
+		"(cx-gui-do cx-set-real-entry-list \"Residual Monitors*Table1*Table2*Table1*Table1(Equations)*RealEntry29\" '( 1e-06))",
+		"(cx-gui-do cx-activate-item \"Residual Monitors*PanelButtons*PushButton1(OK)\")"
+	],
+	"initialise_solution": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Initialization\"))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Initialization\"))",
+		"(cx-gui-do cx-activate-item \"NavigationPane*Frame2*Table1*List_Tree2\")",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Initialization\"))",
+		"(cx-gui-do cx-set-list-selections \"Solution Initialization*Table1*DropDownList1(Compute from)\" '( 3))",
+		"(cx-gui-do cx-activate-item \"Solution Initialization*Table1*DropDownList1(Compute from)\")",
+		"(cx-gui-do cx-activate-item \"Solution Initialization*Table1*Frame9*PushButton1(Initialize)\")"
+	],
+	"run_solution": [
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Run Calculation\"))",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Run Calculation\"))",
+		"(cx-gui-do cx-activate-item \"NavigationPane*Frame2*Table1*List_Tree2\")",
+		"(cx-gui-do cx-set-list-tree-selections \"NavigationPane*Frame2*Table1*List_Tree2\" (list \"Solution|Run Calculation\"))",
+		"(cx-gui-do cx-activate-item \"Run Calculation*Table1*Table6(Solution Advancement)*Table1*PushButton3(Calculate)\")",
+		"(cx-gui-do cx-activate-item \"Information*OK\")"
+	],
+	"export_solution_data": [
+		"(cx-gui-do cx-activate-item \"MenuBar*ExportSubMenu*Solution Data...\")",
+		"(cx-gui-do cx-set-list-selections \"Export*Table1*Table1*DropDownList2(File Type)\" '( 1))",
+		"(cx-gui-do cx-activate-item \"Export*Table1*Table1*DropDownList2(File Type)\")",
+		"(cx-gui-do cx-set-list-selections \"Export*Table1*Table2*Table3*List1(Surfaces)\" '( 1))",
+		"(cx-gui-do cx-activate-item \"Export*Table1*Table2*Table3*List1(Surfaces)\")",
+		"(cx-gui-do cx-set-list-selections \"Export*Table1*Table2*Table4*List1(Quantities)\" '( 1 8 23 24 41 47 48))",
+		"(cx-gui-do cx-activate-item \"Export*Table1*Table2*Table4*List1(Quantities)\")",
+		"(cx-gui-do cx-activate-item \"Export*PanelButtons*PushButton1(OK)\")",
+		"(cx-gui-do cx-set-file-dialog-entries \"Select File\" '( \"E:/ANSYS Inc/working/results/30P30N.csv\") \"ASCII Files ()\")"
+	]
+}
