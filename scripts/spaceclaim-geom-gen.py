@@ -1,10 +1,13 @@
+# Python Script, API Version = V251
+from datetime import datetime
 import glob
 import json
+import logging
 import os
 
 # !! CHANGE DIRECTORY TO POINT TO CLONED REPO LOCATION !!
 with open(r"E:\final-year-project\parameters.json", "r") as f:
-	parameters = json.load(f)
+    parameters = json.load(f)
 
 # C-Domain geometry properties
 domain_radius = parameters["geometry"]["domain_radius"]
@@ -14,237 +17,237 @@ domain_length = parameters["geometry"]["domain_length"]
 coords_folder = parameters["i/o"]["coords_folder"]
 geometries_folder = parameters["i/o"]["geometries_folder"]
 
+geometry_logs_folder = os.path.join(parameters["i/o"]["logs_folder"], "geometry")
+
+# Create log folder if it doesn't exist already
+if not os.path.exists(geometry_logs_folder):
+    os.mkdir(geometry_logs_folder)
+
+# Initialise logging
+log_filename = os.path.join(geometry_logs_folder,
+                            datetime.now().strftime("log_%Y-%m-%d_%H-%M-%S.log"))
+
+# Configure logging
+logging.basicConfig(filename=log_filename, level=logging.INFO,
+                    format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger()
 # Walk through each subfolder within the import location and look for three '.txt. files containing
 # coordinates for each aerofoil element. Save the name of the folder and its absolute path
 aerofoils = []
 for folder in glob.glob(os.path.join(coords_folder, "*")):
-	if os.path.isdir(folder):
-		files = sorted(glob.glob(os.path.join(folder, "*.txt")))
-		file_names = tuple(os.path.splitext(os.path.basename(f))[0] for f in files)
-		
-		# If three '.txt' files exist, add to aerofoil entry
-		if len(file_names) == 3:  
-			aerofoils.append((os.path.basename(folder), os.path.abspath(folder), file_names))
-		else:
-			print("Aerofoil '{0}' has invalid coordinate configuration!")
+    if os.path.isdir(folder):
+        files = sorted(glob.glob(os.path.join(folder, "*.txt")))
+        file_names = tuple(os.path.splitext(os.path.basename(f))[0] for f in files)
+        
+        # If three '.txt' files exist, add to aerofoil entry
+        if len(file_names) == 3:  
+            aerofoils.append((os.path.basename(folder), os.path.abspath(folder), file_names))
+        else:
+            print("Aerofoil '{0}' has invalid coordinate configuration!")
 
 def delete_objects():
-	# Delete Objects
-	selection = Selection.Create(GetRootPart().Curves[2])
-	result = Delete.Execute(selection)
-	# EndBlock
+    # Delete Selection
+    selection = Selection.Create([GetRootPart().DatumPlanes[0].Curves[0],
+        GetRootPart().Bodies[0],
+        GetRootPart().Bodies[0].Edges[-1],
+        GetRootPart().Bodies[0].Edges[-2],
+        GetRootPart().Bodies[0].Edges[-3],
+        GetRootPart().Bodies[0].Edges[-4],
+        GetRootPart().DatumPlanes[0].Curves[2],
+        GetRootPart().DatumPlanes[0].Curves[1]])
+    result = Delete.Execute(selection)
+    # EndBlock
 
-	# Delete Objects
-	selection = Selection.Create(GetRootPart().Curves[1])
-	result = Delete.Execute(selection)
-	# EndBlock
-
-	# Delete Objects
-	selection = Selection.Create(GetRootPart().Curves[0])
-	result = Delete.Execute(selection)
-	# EndBlock
-
-	# Delete Objects
-	selection = BodySelection.Create(GetRootPart().Bodies[0])
-	result = Delete.Execute(selection)
-	# EndBlock
+    # Delete Objects
+    selection = Selection.Create(GetRootPart().DatumPlanes[0])
+    result = Delete.Execute(selection)
+    # EndBlock
 
 
 # Delete all objects if they already exist
 if len(GetRootPart().Bodies) > 1:
-	delete_objects()
+    delete_objects()
 
-for aerofoil in aerofoils:
-	#region # ==== CREATE C-DOMAIN ==== #
+for i, aerofoil in enumerate(aerofoils):
+    progress = "[{0}/{1}]".format(i+1, len(aerofoils))  
+    logging.info("{0} : {1} | Importing aerofoils...".format(progress, aerofoil[0]))
+    # Coordinate filepaths
+    base_filepath = "{0}.txt".format(os.path.join(aerofoil[1], aerofoil[2][0]))
+    flap_filepath = "{0}.txt".format(os.path.join(aerofoil[1], aerofoil[2][1]))
+    slat_filepath = "{0}.txt".format(os.path.join(aerofoil[1], aerofoil[2][2]))
+    
+    # Insert From File
+    importOptions = ImportOptions.Create()
+    DocumentInsert.Execute(base_filepath, importOptions, GetMaps("406d751d"))
+    # EndBlock
 
-	# Set Sketch Plane
-	sectionPlane = Plane.PlaneXY
-	result = ViewHelper.SetSketchPlane(sectionPlane, None)
-	# EndBlock
+    # Insert From File
+    importOptions = ImportOptions.Create()
+    DocumentInsert.Execute(flap_filepath, importOptions, GetMaps("74f728c0"))
+    # EndBlock
 
-	# Sketch Rectangle
-	point1 = Point2D.Create(M(1), M(domain_radius))
-	point2 = Point2D.Create(M(1 + domain_length), M(domain_radius))
-	point3 = Point2D.Create(M(1 + domain_length), M(-domain_radius))
-	result = SketchRectangle.Create(point1, point2, point3)
-	# EndBlock
+    # Insert From File
+    importOptions = ImportOptions.Create()
+    DocumentInsert.Execute(slat_filepath, importOptions, GetMaps("5f814500"))
+    # EndBlock
+    
+    logging.info("{0} : {1} | Import complete.".format(progress, aerofoil[0]))
+    logging.info("{0} : {1} | Creating aerofoil named sections...".format(progress, aerofoil[0]))
+    
+    # Create Named Selection Group
+    primarySelection = Selection.Create(GetRootPart().Curves[0])
+    secondarySelection = Selection.Empty()
+    result = NamedSelection.Create(primarySelection, secondarySelection, "Base")
+    # EndBlock
 
-	# Create Sweep Arc
-	origin = Point2D.Create(M(1), M(0))
-	start = Point2D.Create(M(1), M(domain_radius))
-	end = Point2D.Create(M(1), M(-domain_radius))
-	senseClockWise = False
-	result = SketchArc.CreateSweepArc(origin, start, end, senseClockWise)
+    # Create Named Selection Group
+    primarySelection = Selection.Create(GetRootPart().Curves[1])
+    secondarySelection = Selection.Empty()
+    result = NamedSelection.Create(primarySelection, secondarySelection, "Flap")
+    # EndBlock
 
-	baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4].GetChildren[ICurvePoint]()[1])
-	targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[2].GetChildren[ICurvePoint]()[1])
+    # Create Named Selection Group
+    primarySelection = Selection.Create(GetRootPart().Curves[2])
+    secondarySelection = Selection.Empty()
+    result = NamedSelection.Create(primarySelection, secondarySelection, "Slat")
+    # EndBlock
+    
+    logging.info("{0} : {1} | Named sections created.".format(progress, aerofoil[0]))
+    logging.info("{0} : {1} | Creating C-Domain...".format(progress, aerofoil[0]))
+    
+    #region # ==== CREATE C-DOMAIN ==== #
 
-	result = Constraint.CreateCoincident(baseSel, targetSel)
+    # Set Sketch Plane
+    sectionPlane = Plane.PlaneXY
+    result = ViewHelper.SetSketchPlane(sectionPlane, None)
+    # EndBlock
 
-	baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4], 3.14159265358979)
-	targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[2], domain_radius)
+    # Sketch Rectangle
+    point1 = Point2D.Create(M(1), M(domain_radius))
+    point2 = Point2D.Create(M(1 + domain_length), M(domain_radius))
+    point3 = Point2D.Create(M(1 + domain_length), M(-domain_radius))
+    result = SketchRectangle.Create(point1, point2, point3)
+    # EndBlock
 
-	result = Constraint.CreateTangent(baseSel, targetSel)
+    # Create Sweep Arc
+    origin = Point2D.Create(M(1), M(0))
+    start = Point2D.Create(M(1), M(domain_radius))
+    end = Point2D.Create(M(1), M(-domain_radius))
+    senseClockWise = False
+    result = SketchArc.CreateSweepArc(origin, start, end, senseClockWise)
 
-	baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4].GetChildren[ICurvePoint]()[0])
-	targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[3].GetChildren[ICurvePoint]()[1])
+    baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4].GetChildren[ICurvePoint]()[1])
+    targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[2].GetChildren[ICurvePoint]()[1])
 
-	result = Constraint.CreateCoincident(baseSel, targetSel)
+    result = Constraint.CreateCoincident(baseSel, targetSel)
 
-	baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4].GetChildren[ICurvePoint]()[1])
-	targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[3].GetChildren[ICurvePoint]()[0])
+    baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4], 3.14159265358979)
+    targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[2], domain_radius)
 
-	result = Constraint.CreateCoincident(baseSel, targetSel)
-	# EndBlock
-	
-	# Delete Selection
-	selection = Selection.Create(GetRootPart().DatumPlanes[0].Curves[3])
-	result = Delete.Execute(selection)
-	# EndBlock
-	
+    result = Constraint.CreateTangent(baseSel, targetSel)
+
+    baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4].GetChildren[ICurvePoint]()[0])
+    targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[3].GetChildren[ICurvePoint]()[1])
+
+    result = Constraint.CreateCoincident(baseSel, targetSel)
+
+    baseSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[4].GetChildren[ICurvePoint]()[1])
+    targetSel = SelectionPoint.Create(GetRootPart().DatumPlanes[0].Curves[3].GetChildren[ICurvePoint]()[0])
+
+    result = Constraint.CreateCoincident(baseSel, targetSel)
+    # EndBlock
+    
+    # Delete Selection
+    selection = Selection.Create(GetRootPart().DatumPlanes[0].Curves[3])
+    result = Delete.Execute(selection)
+    # EndBlock
+    
+    # Fill
+    selection = Selection.Create([GetRootPart().DatumPlanes[0].Curves[0],
+        GetRootPart().DatumPlanes[0].Curves[1],
+        GetRootPart().DatumPlanes[0].Curves[2],
+        GetRootPart().DatumPlanes[0].Curves[3],
+        GetRootPart().DatumPlanes[0].Curves[4],
+        GetRootPart().DatumPlanes[0].Curves[5],
+        GetRootPart().DatumPlanes[0].Curves[6]])
+    secondarySelection = Selection.Empty()
+    options = FillOptions()
+    result = Fill.Execute(selection, secondarySelection, options, FillMode.Layout, None)
+    # EndBlock
+    
    # Solidify Sketch
-	mode = InteractionMode.Solid
-	result = ViewHelper.SetViewMode(mode, None)
-	# EndBlock
+    mode = InteractionMode.Solid
+    result = ViewHelper.SetViewMode(mode, None)
+    # EndBlock   
+    
+    # Delete Selection
+    selection = FaceSelection.Create(GetRootPart().Bodies[0].Faces[2])
+    result = Delete.Execute(selection)
+    # EndBlock
 
-	#endregion
+    # Delete Selection
+    selection = FaceSelection.Create(GetRootPart().Bodies[1].Faces[0])
+    result = Delete.Execute(selection)
+    # EndBlock
 
-	#region # ==== CREATE AEROFOIL GEOMETRY ==== #
-	
-	# Coordinate filepaths
-	base_filepath = "{0}.txt".format(os.path.join(aerofoil[1], aerofoil[2][0]))
-	flap_filepath = "{0}.txt".format(os.path.join(aerofoil[1], aerofoil[2][1]))
-	slat_filepath = "{0}.txt".format(os.path.join(aerofoil[1], aerofoil[2][2]))
-	
-	# Insert From Base Element File
-	importOptions = ImportOptions.Create()
-	DocumentInsert.Execute(base_filepath, importOptions, GetMaps("ac3e73e4"))
-	# EndBlock
-	
-	# Insert From Flap Element File
-	importOptions = ImportOptions.Create()
-	DocumentInsert.Execute(flap_filepath, importOptions, GetMaps("ac3e73e4"))
-	# EndBlock
-	
-	# Insert From Slat Element File
-	importOptions = ImportOptions.Create()
-	DocumentInsert.Execute(slat_filepath, importOptions, GetMaps("ac3e73e4"))
-	# EndBlock
+    # Delete Selection
+    selection = FaceSelection.Create(GetRootPart().Bodies[0].Faces[1])
+    result = Delete.Execute(selection)
+    # EndBlock
 
-	# Fill Base Curve
-	selection = Selection.Create(GetRootPart().Curves[0])
-	secondarySelection = Selection.Empty()
-	options = FillOptions()
-	result = Fill.Execute(selection, secondarySelection, options, FillMode.ThreeD, None)
-	# EndBlock
-	
-	# Intersecting bodies
-	targets = BodySelection.Create(GetRootPart().Bodies[0])
-	tools = BodySelection.Create(GetRootPart().Bodies[1])
-	options = MakeSolidsOptions()
-	options.KeepCutter = False
-	options.SubtractFromTarget = True
-	result = Combine.Intersect(targets, tools, options)
-	# EndBlock
+    # Delete Selection
+    selection = FaceSelection.Create(GetRootPart().Bodies[0].Faces[0])
+    result = Delete.Execute(selection)
+    # EndBlock
 
-	# Delete Selection
-	selection = FaceSelection.Create(GetRootPart().Bodies[0].Faces[1])
-	result = Delete.Execute(selection)
-	# EndBlock
-	
-	# Fill
-	selection = Selection.Create(GetRootPart().Curves[1])
-	secondarySelection = Selection.Empty()
-	options = FillOptions()
-	result = Fill.Execute(selection, secondarySelection, options, FillMode.ThreeD, None)
-	# EndBlock
-	
-	# Intersecting bodies
-	targets = BodySelection.Create(GetRootPart().Bodies[0])
-	tools = BodySelection.Create(GetRootPart().Bodies[1])
-	options = MakeSolidsOptions()
-	options.KeepCutter = False
-	options.SubtractFromTarget = True
-	result = Combine.Intersect(targets, tools, options)
-	# EndBlock
+    #endregion
+    
+    logging.info("{0} : {1} | C-Domain created.".format(progress, aerofoil[0]))
 
-	# Delete Selection
-	selection = FaceSelection.Create(GetRootPart().Bodies[0].Faces[1])
-	result = Delete.Execute(selection)
-	# EndBlock
-	
-	# Fill
-	selection = Selection.Create(GetRootPart().Curves[2])
-	secondarySelection = Selection.Empty()
-	options = FillOptions()
-	result = Fill.Execute(selection, secondarySelection, options, FillMode.ThreeD, None)
-	# EndBlock
-	
-	# Intersecting bodies
-	targets = BodySelection.Create(GetRootPart().Bodies[0])
-	tools = BodySelection.Create(GetRootPart().Bodies[1])
-	options = MakeSolidsOptions()
-	options.KeepCutter = False
-	options.SubtractFromTarget = True
-	result = Combine.Intersect(targets, tools, options)
-	# EndBlock
+    #region # ==== CREATE AEROFOIL GEOMETRY ==== #
+    
+    logger.info("{0} : {1} | Creating boundary named sections...".format(progress, aerofoil[0]))
+    
+    #endregion
 
-	# Delete Selection
-	selection = FaceSelection.Create(GetRootPart().Bodies[0].Faces[1])
-	result = Delete.Execute(selection)
-	# EndBlock
-	
-	#endregion
+    #region # ==== CREATE NAMED SECTIONS ==== #
 
-	#region # ==== CREATE NAMED SECTIONS ==== #
+    # Create Named Selection
+    primarySelection = EdgeSelection.Create(GetRootPart().Bodies[0].Edges[-4])
+    secondarySelection = Selection.Empty()
+    result = NamedSelection.Create(primarySelection, secondarySelection, "Inlet")
+    # EndBlock
 
-	# Create Named Selection Group
-	primarySelection = Selection.Create(GetRootPart().Curves[0])
-	secondarySelection = Selection.Empty()
-	result = NamedSelection.Create(primarySelection, secondarySelection, "Base")
-	# EndBlock
+    # Create Named Selection
+    primarySelection = EdgeSelection.Create([GetRootPart().Bodies[0].Edges[-1],
+        GetRootPart().Bodies[0].Edges[-3]])
+    secondarySelection = Selection.Empty()
+    result = NamedSelection.Create(primarySelection, secondarySelection, "Symmetry")
+    # EndBlock
 
-	# Create Named Selection Group
-	primarySelection = Selection.Create(GetRootPart().Curves[1])
-	secondarySelection = Selection.Empty()
-	result = NamedSelection.Create(primarySelection, secondarySelection, "Flap")
-	# EndBlock
+    # Create Named Selection
+    primarySelection = EdgeSelection.Create(GetRootPart().Bodies[0].Edges[-2])
+    secondarySelection = Selection.Empty()
+    result = NamedSelection.Create(primarySelection, secondarySelection, "Outlet")
+    # EndBlock
+    
+    # Create Named Selection
+    primarySelection = BodySelection.Create(GetRootPart().Bodies[0])
+    secondarySelection = Selection.Empty()
+    result = NamedSelection.Create(primarySelection, secondarySelection, "Fluid")
+    # EndBlock
+    
+    #endregion
+    
+    logger.info("{0} : {1} | Boundary named sections created.".format(progress, aerofoil[0]))
+    
+    logger.info("{0} : {1} | Exporting geometry file...".format(progress, aerofoil[0]))
 
-	# Create Named Selection Group
-	primarySelection = Selection.Create(GetRootPart().Curves[2])
-	secondarySelection = Selection.Empty()
-	result = NamedSelection.Create(primarySelection, secondarySelection, "Slat")
-	# EndBlock
-
-	# Create Named Selection Group
-	primarySelection = EdgeSelection.Create(GetRootPart().Bodies[0].Edges[0])
-	secondarySelection = Selection.Empty()
-	result = NamedSelection.Create(primarySelection, secondarySelection, "Inlet")
-	# EndBlock
-
-	# Create Named Selection Group
-	primarySelection = EdgeSelection.Create([GetRootPart().Bodies[0].Edges[3],
-		GetRootPart().Bodies[0].Edges[1]])
-	secondarySelection = Selection.Empty()
-	result = NamedSelection.Create(primarySelection, secondarySelection, "Symmetry")
-	# EndBlock
-
-	# Create Named Selection Group
-	primarySelection = EdgeSelection.Create(GetRootPart().Bodies[0].Edges[2])
-	secondarySelection = Selection.Empty()
-	result = NamedSelection.Create(primarySelection, secondarySelection, "Outlet")
-	# EndBlock
-
-	# Create Named Selection Group
-	primarySelection = FaceSelection.Create(GetRootPart().Bodies[0].Faces[0])
-	secondarySelection = Selection.Empty()
-	result = NamedSelection.Create(primarySelection, secondarySelection, "Fluid")
-	# EndBlock
-	#endregion
-
-	# Save File to export location with the aerofoil's name
-	options = ExportOptions.Create()
-	DocumentSave.Execute(r"{0}.scdocx".format(os.path.join(geometries_folder, aerofoil[0])), options)
-	# EndBlock
-
-	#delete_objects()
+    # Save File to export location with the aerofoil's name
+    options = ExportOptions.Create()
+    DocumentSave.Execute(r"{0}.scdocx".format(os.path.join(geometries_folder, aerofoil[0])), options)
+    # EndBlock
+    
+    logger.info("{0} : {1} | Export successful.".format(progress, aerofoil[0]))
+    
+    delete_objects()

@@ -27,14 +27,12 @@ def cubic_bezier(t, p0, p1, p2, p3):
 	"""
 	return (1-t)**3 * p0 + 3*(1-t)**2*t * p1 + 3*(1-t)*t**2 * p2 + t**3 * p3
 	
-def slope_eq_at_idx(points, idx, forward=True):
+def slope_eq_at_idx(points, idx):
 	"""
 	Returns both the gradient and y-intercept for a straight line defined between the point at the given index and the previous (or next) point.
 	"""
 	if idx+1 == len(points):
 		m = (points[idx][1] - points[idx-1][1]) / (points[idx][0] - points[idx-1][0])
-	elif forward:
-		m = (points[idx+1][1] - points[idx][1]) / (points[idx+1][0] - points[idx][0])
 	else:
 		m = (points[idx-1][1] - points[idx][1]) / (points[idx-1][0] - points[idx][0])
 	c = points[idx][1] - m*points[idx][0]
@@ -75,3 +73,16 @@ def rotate_coords(coords:np.ndarray, aoa:float, pivot:np.ndarray = np.zeros(shap
 	new_coords += pivot
 	
 	return new_coords
+
+def calc_first_cell_height(Re:float, x:float, rho:float, mu:float, yplus:float):
+	U = (Re * mu) / (rho * x)
+
+	cf = 0.026 / (math.pow(Re, 1/7))
+	
+	tau_w = 0.5 * rho * math.pow(U, 2) * cf
+	
+	ut = math.pow(tau_w / rho, 0.5)
+	
+	yh = (yplus * mu) / (ut * rho)
+	
+	return yh

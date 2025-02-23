@@ -718,4 +718,4 @@ def generate_30P30N_coordinates(directory:str):
 if __name__ == "__main__":
 	parameters = load_parameters()
 	
-	generate_30P30N_coordinates(parameters["i/o"]["coords_import_folder"])
+	generate_30P30N_coordinates(parameters["i/o"]["coords_folder"])
