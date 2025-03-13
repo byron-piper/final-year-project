@@ -5,10 +5,28 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from model import VAE
 from datasets import FluentDataset
+from models import VAE
 
-def BCE_loss_fn(x_hat, x, mu, logvar):
+
+def BCE_loss_fn(x_hat, x, mu, logvar) -> float:
+    #region docstring
+    """
+    Calculates binary cross entropy dominate loss with KL divergence addition
+    
+    Parameters
+    ----------
+    x_hat : np.ndarray
+    x : int
+    mu : Any
+    logvar : Any
+        
+    Returns
+    -------
+    float
+        Total loss
+    """
+    #endregion
     
     BCE = nn.functional.binary_cross_entropy(
         x_hat, x, reduction='sum'

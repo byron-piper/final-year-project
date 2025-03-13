@@ -4,7 +4,9 @@ import os
 import random
 import shutil
 
-from aerofoil_utils import generate_naca4, generate_flap_coords, generate_slat_coords, normalise_aerofoil_coords, save_aerofoil, aerofoil_elements_intersecting, visualise_aerofoil_coords
+import numpy as np
+
+from aerofoil_utils import generate_naca4, generate_flap_coords, generate_slat_coords, normalise_aerofoil_coords, save_highlift_aerofoil, aerofoil_elements_intersecting, visualise_aerofoil_coords
 from helper import load_parameters
 
 def generate_random_slat_params(slat_batch_size:int):
@@ -148,7 +150,7 @@ def generate_training_data(naca_batch_size:int, flap_batch_size:int, slat_batch_
                 if aerofoil_elements_intersecting(base_coords, flap_coords, slat_coords):
                     print(f"Aerofoil '{combined_key}' has intersecting elements and will not be added to dataset.")
                     continue
-
+                
                 base_coords, flap_coords, slat_coords = normalise_aerofoil_coords([base_coords, flap_coords, slat_coords], 1)
 
                 aerofoils[combined_key] = [base_coords, flap_coords, slat_coords]
@@ -248,6 +250,6 @@ if __name__ == "__main__":
     # Write the randomly generated coordinates to coordinates folder
     if params["coords"]["write_coords"]:
         for aerofoil_id, aerofoil_coords in aerofoils.items():
-            save_aerofoil(aerofoil_id, aerofoil_coords, params["i/o"]["coords_folder"])
+            save_highlift_aerofoil(aerofoil_id, aerofoil_coords, params["i/o"]["coords_folder"])
 
     

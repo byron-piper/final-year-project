@@ -1,4 +1,3 @@
-import ansys.fluent.core as pyfluent
 from datetime import datetime, timedelta
 import glob
 import logging
@@ -6,6 +5,7 @@ import math
 import os
 import sys
 
+import ansys.fluent.core as pyfluent
 import numpy as np
 
 project_path = r"C:\Users\honey\Documents\PROJECT\final-year-project-main"
@@ -13,7 +13,26 @@ sys.path.append(project_path)
 
 from sample.helper import load_parameters, calc_freestream_velocity
 
-def configure_solver_settings(solver, iterations):
+def configure_solver_settings(solver, iterations:int):
+    #region docstring
+    """
+    Configures the solver settings to default values:
+        - Viscous model = `spalart-allmaras`
+        - Velocity specification method = `Components`
+        - Residuals absolute criteria [continuity, x-velocity, y-velocity, nut] = `1e-6`
+        - Iterations = `iterations`
+    
+    Parameters
+    ----------
+    None
+        
+    Returns
+    -------
+    unknown
+        Fluent inlent object
+    """
+    #endregion
+    
     logging.info("[-/-] : - | Running setup...")
     solver.settings.setup.models.viscous.model = 'spalart-allmaras'
 
@@ -31,26 +50,47 @@ def configure_solver_settings(solver, iterations):
 
     return inlet
 
-def run_solver(parameters:dict):
+def run_solver(params:dict) -> None:
+    #region
+    """
+    Performs a 2D Fluent simulation for each `.h5` mesh file found in the
+    meshes folder given by `parameters`. Each simulation is ran under the given
+    conditions:
+        - Spalart-Allmaras viscous model
+        - 15 Angle of Attacks ranging from {-2.5, 15} degrees by manipulating velocity components
+        - 1e-6 absolute criteria for each residual
+    
+    Saves flowfield data in `.csv` files and lift- and drag-coefficients in `.out` files
+    
+    Parameters
+    ----------
+    params : dict
+        Dictionary containing workflow parameters
+        
+    Returns
+    -------
+    None
+    """
+    #endregion
+    
     #region # ====  UNPACK PARAMETERS ==== #
 
-    chord = parameters["coords"]["chord"]
+    chord = params["coords"]["chord"]
 
-    overwrite_results = parameters["solver"]["overwrite_results"]
-    freestream_reynolds = parameters["solver"]["freestream_reynolds"]
-    freestream_density = parameters["solver"]["freestream_density"]
-    freestream_viscosity = parameters["solver"]["freestream_viscosity"]
-    iterations = parameters["solver"]["iterations"]
+    freestream_reynolds = params["solver"]["freestream_reynolds"]
+    freestream_density = params["solver"]["freestream_density"]
+    freestream_viscosity = params["solver"]["freestream_viscosity"]
+    iterations = params["solver"]["iterations"]
     
-    meshes_folder = parameters["i/o"]["meshes_folder"]
-    cases_folder = parameters["i/o"]["cases_folder"]
-    results_folder = parameters["i/o"]["results_folder"]
-    logs_folder = os.path.join(parameters["i/o"]["logs_folder"], "solver")
-
-    if not os.path.exists(logs_folder):
-        os.mkdir(logs_folder)
+    meshes_folder = params["i/o"]["meshes_folder"]
+    cases_folder = params["i/o"]["cases_folder"]
+    results_folder = params["i/o"]["results_folder"]
+    logs_folder = os.path.join(params["i/o"]["logs_folder"], "solver")
 
     #endregion
+    
+    if not os.path.exists(logs_folder):
+        os.mkdir(logs_folder)
 
     # Initialise logging
     log_filename = os.path.join(logs_folder,

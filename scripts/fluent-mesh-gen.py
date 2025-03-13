@@ -158,11 +158,13 @@ for i, geometry in enumerate(geometries):
 		logging.info("{0} : {1} | Mesh exported.".format(progress, mesh_name))
 		shutil.move(geometry_path, converted_geometries_folder)
 
+        # Calculate time elapsed between current meshing operation
 		end_mesh_generation = datetime.now()
 		time_elapsed = end_mesh_generation - start_mesh_generation
 
 		logging.info("{0} : {1} | Total time elapsed: {2}".format(progress, mesh_name, time_elapsed))
 
+        # Calculate total average time and estimated time left
 		time_durations.append(time_elapsed)
 		avg_time = sum(time_durations) / i+1
 		remaining_meshes = len(geometries) - i+1
