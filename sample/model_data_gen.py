@@ -4,9 +4,7 @@ import os
 import random
 import shutil
 
-import numpy as np
-
-from aerofoil_utils import generate_naca4, generate_flap_coords, generate_slat_coords, normalise_aerofoil_coords, save_aerofoil, remove_points_within_radius, aerofoil_elements_intersecting
+from aerofoil_utils import generate_naca4, generate_flap_coords, generate_slat_coords, normalise_aerofoil_coords, save_aerofoil, aerofoil_elements_intersecting, visualise_aerofoil_coords
 from helper import load_parameters
 
 def generate_random_slat_params(slat_batch_size:int):
@@ -145,15 +143,15 @@ def generate_training_data(naca_batch_size:int, flap_batch_size:int, slat_batch_
             for flap_id, flap_params in flap_params_batch.items():
                 slat_coords, base_coords = generate_slat_coords(1, naca_coords, slat_params)
                 flap_coords, base_coords = generate_flap_coords(1, base_coords, flap_params)
+                combined_key = f"{naca_id}-{flap_id}-{slat_id}"
 
                 if aerofoil_elements_intersecting(base_coords, flap_coords, slat_coords):
+                    print(f"Aerofoil '{combined_key}' has intersecting elements and will not be added to dataset.")
                     continue
 
                 base_coords, flap_coords, slat_coords = normalise_aerofoil_coords([base_coords, flap_coords, slat_coords], 1)
 
-                combined_key = f"{naca_id}-{flap_id}-{slat_id}"
                 aerofoils[combined_key] = [base_coords, flap_coords, slat_coords]
-
 
 
     return aerofoils
@@ -225,9 +223,17 @@ def test():
 if __name__ == "__main__":
     params = load_parameters()
 
-    random.seed(1347) # 13:21
+    random.seed(1347) # 13:47
 
-    aerofoils = generate_training_data(5, 3, 3)
+    num_nacas = 5
+    num_slats = 3
+    num_flaps = 3
+
+    aerofoils = generate_training_data(num_nacas, num_slats, num_flaps)
+
+    columns = num_slats * num_flaps
+
+    visualise_aerofoil_coords(aerofoils, columns=columns)
 
     folders = [f for f in glob.glob(os.path.join(params["i/o"]["coords_folder"], "*")) if os.path.isdir(f)]
     
@@ -239,6 +245,7 @@ if __name__ == "__main__":
             print(f"Cannot delete '{folder}'!")
             pass
 
+    # Write the randomly generated coordinates to coordinates folder
     if params["coords"]["write_coords"]:
         for aerofoil_id, aerofoil_coords in aerofoils.items():
             save_aerofoil(aerofoil_id, aerofoil_coords, params["i/o"]["coords_folder"])

@@ -1,5 +1,4 @@
 import math
-import numpy as np
 
 def calc_first_cell_height(Re:float, x:float, rho:float, mu:float, yplus:float):
 	U = (Re * mu) / (rho * x)

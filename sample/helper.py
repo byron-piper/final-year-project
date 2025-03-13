@@ -1,6 +1,7 @@
 import json
 import math
 
+import h5py
 import numpy as np
 
 def load_parameters() -> dict:
@@ -86,3 +87,13 @@ def calc_first_cell_height(Re:float, x:float, rho:float, mu:float, yplus:float):
 	yh = (yplus * mu) / (ut * rho)
 	
 	return yh
+
+def calc_freestream_velocity(Re:float, x:float, rho:float, mu:float):
+	return (Re * mu) / (x * rho)
+
+def get_mesh_node_count(filename):
+    try:
+        with h5py.File(filename, "r") as f:
+                return len(f["meshes"]["1"]["nodes"]["coords"]["1"])
+    except Exception as e:
+        print(f"Error reading mesh: '{e}'")

@@ -1,6 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import glob
-import json
 import logging
 import os
 import shutil
@@ -8,8 +7,6 @@ import sys
 
 project_path = r"E:\final-year-project"
 sys.path.append(project_path)
-
-print(sys.path)
 
 os.chdir(project_path)
 
@@ -169,7 +166,7 @@ for i, geometry in enumerate(geometries):
 		time_durations.append(time_elapsed)
 		avg_time = sum(time_durations) / i+1
 		remaining_meshes = len(geometries) - i+1
-		estimated_time_remaining = avg_time * remaining_meshes
+		estimated_time_remaining = timedelta(seconds=(avg_time * remaining_meshes))
 		logging.info("{0} : {1} | Estimated time remaining: {2}".format(progress, mesh_name, estimated_time_remaining))
 
 		shutil.move(geometry_path, converted_geometries_folder)

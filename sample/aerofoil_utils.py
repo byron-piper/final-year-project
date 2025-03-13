@@ -1,6 +1,7 @@
 import math
 import os
 
+import gmsh
 import numpy as np
 from shapely.geometry import Polygon
 
@@ -315,3 +316,32 @@ def surface_normal(coords:np.ndarray, x_offset:float, y_offset:float):
 	normals = coords[coords_idx:coords_idx+2] + normals * y_offset
 
 	return normals
+
+def visualise_aerofoil_coords(aerofoils:dict, tag:str=None, columns:int=3, open_gmsh:bool=True):
+	gmsh.initialize("aerofoils_visualised")
+
+	# Visualise specific aerofoil
+	if tag:
+		for element in aerofoils[tag]:
+			for coord in element:
+				gmsh.model.geo.addPoint(coord[0], coord[1], 0, 1)
+		gmsh.model.geo.synchronize()
+		gmsh.write("aerofoils_visualised.geo_unrolled")
+		if open_gmsh: gmsh.fltk.run()
+		gmsh.finalize()
+		return
+
+	# Visualise all aerofoils
+	row = 0
+	for i, (_, elements) in enumerate(aerofoils.items()):
+		if i > 0 and i % columns == 0: row += 1
+
+		for element in elements:
+			for coord in element:
+				gmsh.model.geo.addPoint(coord[0] + (2*(i-row*columns)), coord[1] - (2*row), 0, 1)
+
+		gmsh.model.geo.synchronize()
+
+	gmsh.write("aerofoils_visualised.geo_unrolled")
+	if open_gmsh: gmsh.fltk.run()
+	gmsh.finalize()

@@ -36,12 +36,25 @@
 		"target_yplus": 0.5,
 		"iterations": 500
 	},
+    "preprocess": {
+		"downsampling": 327680
+	},
+    "training": {
+        "device_tag": "cuda",
+        "batch_size": 32,
+        "learning_rate": 1e-4,
+        "epochs": 10,
+        "loss_fn": "BCE",
+        "conv_hid_dim": [65536, 256],
+        "hid_lat_dim": [256, 3]
+    },
 	"i/o": {
 		"coords_folder": "C:\\Users\\honey\\Documents\\PROJECT\\coordinates",
 		"geometries_folder": "C:\\Users\\honey\\Documents\\PROJECT\\geometries",
 		"meshes_folder": "C:\\Users\\honey\\Documents\\PROJECT\\meshes",
 		"cases_folder": "C:\\Users\\honey\\Documents\\PROJECT\\cases",
 		"results_folder": "C:\\Users\\honey\\Documents\\PROJECT\\results",
-		"logs_folder": "C:\\Users\\honey\\Documents\\PROJECT\\logs"
+		"logs_folder": "C:\\Users\\honey\\Documents\\PROJECT\\logs",
+        "datasets_folder": "C:\\Users\\honey\\Documents\\PROJECT\\datasets"
 	}
 }
