@@ -1,7 +1,14 @@
 {
+    "datagen": {
+        "rn_seed": 1347,
+        "num_nacas": 5,
+        "num_slats": 3,
+        "num_flaps": 3
+    },
 	"coords": {
 		"write_coords": true,
-		"chord": 1
+		"chord": 1,
+        "rn_seed": 1347
 	},
 	"geometry": {
 		"domain_radius": 10,
@@ -37,16 +44,21 @@
 		"iterations": 500
 	},
     "preprocess": {
-		"downsampling": 327680
+		"field_dim": 320,
+        "visualise": false,
+        "train_batch_size": 645
 	},
     "training": {
-        "device_tag": "cuda",
-        "batch_size": 32,
+        "checkpoint": null,
+        "batch_size": 15,
         "learning_rate": 1e-4,
-        "epochs": 10,
-        "loss_fn": "BCE",
-        "conv_hid_dim": [65536, 256],
-        "hid_lat_dim": [256, 3]
+        "weight_decay": 1e-5,
+        "num_epochs": 5,
+        "logging_interval": 1,
+        "saving_interval": 10
+    },
+    "model": {
+        "checkpoint": "vae.pt"
     },
 	"i/o": {
 		"coords_folder": "C:\\Users\\honey\\Documents\\PROJECT\\coordinates",
@@ -55,6 +67,7 @@
 		"cases_folder": "C:\\Users\\honey\\Documents\\PROJECT\\cases",
 		"results_folder": "C:\\Users\\honey\\Documents\\PROJECT\\results",
 		"logs_folder": "C:\\Users\\honey\\Documents\\PROJECT\\logs",
-        "datasets_folder": "C:\\Users\\honey\\Documents\\PROJECT\\datasets"
+        "datasets_folder": "C:\\Users\\honey\\Documents\\PROJECT\\datasets",
+        "checkpoints_folder": "C:\\Users\\honey\\Documents\\PROJECT\\checkpoints"
 	}
 }

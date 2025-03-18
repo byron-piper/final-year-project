@@ -224,14 +224,19 @@ def test():
 
 if __name__ == "__main__":
     params = load_parameters()
+    
+    #region # ==== UNPACK PARAMETERS ==== #
+    
+    rn_seed = params["datagen"]["rn_seed"]
+    num_nacas = params["datagen"]["num_nacas"]
+    num_flaps = params["datagen"]["num_flaps"]
+    num_slats = params["datagen"]["num_slats"]
+    
+    #endregion
 
-    random.seed(1347) # 13:47
+    random.seed(rn_seed)
 
-    num_nacas = 5
-    num_slats = 3
-    num_flaps = 3
-
-    aerofoils = generate_training_data(num_nacas, num_slats, num_flaps)
+    aerofoils = generate_training_data(num_nacas, num_flaps, num_slats)
 
     columns = num_slats * num_flaps
 

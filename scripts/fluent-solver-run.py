@@ -84,7 +84,7 @@ def run_solver(params:dict) -> None:
     
     meshes_folder = params["i/o"]["meshes_folder"]
     cases_folder = params["i/o"]["cases_folder"]
-    results_folder = params["i/o"]["results_folder"]
+    results_folder = os.path.join(params["i/o"]["results_folder"], "fluent")
     logs_folder = os.path.join(params["i/o"]["logs_folder"], "solver")
 
     #endregion
@@ -210,7 +210,6 @@ def run_solver(params:dict) -> None:
         except Exception as e:
             logging.error(f"{progress} : {mesh_name} | Error occured during solving procress: '{e}'. Skipping!")
                     
-
 if __name__ == "__main__":
     parameters = load_parameters()
 
