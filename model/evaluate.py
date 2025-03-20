@@ -1,12 +1,11 @@
 import sys
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch_geometric.loader import DataLoader as DL
 
-from datasets import FlowFieldDataset
+from datasets import FlowField
 
 sys.path.append(r"C:\Users\honey\Documents\PROJECT\final-year-project")
 
@@ -30,40 +29,50 @@ def visualise_model(params:dict, model_dict:dict):
     
     model.eval()
     
-    dataset = FlowFieldDataset(datasets_folder, train=True)
+    dataset = FlowField(datasets_folder, train=True)
+    dataloader = DL(dataset=dataset, batch_size=5, shuffle=True, num_workers=0)
     
-    dataloader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=5)
-
-    latents = []
+    aoa = np.linspace(-5, 30, 15)
+    
+    latent_vectors = None
     with torch.no_grad():
-        for x, _, _ in dataloader:
-            x = x.view(batch_size, 1, field_dim, field_dim)
-            x = x.to(device)
-            latent = model.fc_enc(model.encoder(x))
-            latents.append(latent.cpu().numpy())
+        for batch_idx, (flow, _) in enumerate(dataloader):    
+            flow = flow.to(device)
+            output = model(flow)
+            latents = model.compute_latents(flow)
+            
+            flow = flow.detach().cpu().x.numpy()[:, 1]
+            output = output.detach().cpu().numpy()[:, 1]
+            latents = latents.detach().cpu().numpy()
+            
+            if latent_vectors is None: latent_vectors = latents
+            else: latent_vectors = np.concat((latent_vectors, latents))
+            
+            print(batch_idx+1)
+            
+            if (batch_idx+1) % 3 == 0:
+                plt.scatter(aoa, latent_vectors[:, 0])
+                plt.show()
+                latent_vectors = None
+            
+    # fig = plt.figure(figsize=(8, 6))
+    # ax = fig.add_subplot(111, projection='3d')  # Standalone 3D plot
+
+    # # Scatter plot
+    # ax.scatter(latent_vectors[:, 0], latent_vectors[:, 1], latent_vectors[:, 2], c='blue', marker='o', alpha=0.6)
+
+    # # Labels
+    # ax.set_xlabel('X Axis')
+    # ax.set_ylabel('Y Axis')
+    # ax.set_zlabel('Z Axis')
+    # ax.set_title('Standalone 3D Scatter Plot')
+
+    # # Show plot
+    # plt.show()
+        
+    return
     
-    latents = np.concat(latents, axis=0)
-    
-    latents = np.array(latents)
-    
-    x = latents[:, 0]
-    y = latents[:, 1]
-    z = latents[:, 2]
-
-    # Create 3D scatter plot
-    fig = plt.figure(figsize=(8, 6))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(x, y, z, alpha=0.5, c=np.arange(len(x)), cmap='viridis')
-
-    # Labels and title
-    ax.set_xlabel('Latent Dimension 1')
-    ax.set_ylabel('Latent Dimension 2')
-    ax.set_zlabel('Latent Dimension 3')
-    ax.set_title('3D Latent Space Visualization')
-
-    plt.show()
-
-def visualise_vae(params:dict, model_dict:dict):
+def visualise_flowfield_reconstruction(params:dict, model_dict:dict):
     #region # ==== UNPACK PARAMETERS ==== #
     
     field_dim = params["preprocess"]["field_dim"]
@@ -80,33 +89,62 @@ def visualise_vae(params:dict, model_dict:dict):
     
     model.eval()
     
-    dataset = FlowFieldDataset(datasets_folder, train=True)
+    aoa = np.linspace(-5, 30, 15)
     
-    dataloader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=5)
-    
-    fig, axes = plt.subplots(nrows=2, ncols=1, 
-                             sharex=True, sharey=True)
-    
-    for batch_idx, (features, _, _) in enumerate(dataloader):
-        
-        features = features.to(device)
-
-        color_channels = features.shape[1]
-        image_height = features.shape[2]
-        image_width = features.shape[3]
-        
-        with torch.no_grad():
-            encoded, z_mean, z_log_var, decoded_images = model(features)
-
-        orig_images = features[:0]
-        break
-    
-    for i in range(1):
-        for ax, img in zip(axes, [orig_images, decoded_images]):
-            curr_img = img.detach().to(torch.device('cpu'))        
-
-            ax.imshow(curr_img.view((image_height, image_width)), cmap='binary')
-
+    dataset = FlowField(datasets_folder, train=False)
+    dataloader = DL(dataset=dataset, batch_size=5)
+    lats = None
+    with torch.no_grad():
+        for batch_idx, (flow, xy) in enumerate(dataloader):
+            flow = flow.to(device)
+            #output = model(flow)
+            
+            #flow = flow.detach().cpu().x.numpy().reshape(5, 102400, 3)
+            #output = output.detach().cpu().numpy().reshape(5, 102400, 3)
+            #xy = xy.detach().cpu().numpy().reshape(5, 102400, 2)
+            
+            latents = model.compute_latents(flow)
+            latents = latents.detach().cpu().numpy()
+            
+            if lats is None: lats = latents
+            else: lats = np.concat((lats, latents))
+            
+            if (batch_idx+1) % 3 == 0:
+                fig = plt.figure(figsize=(12, 12))
+                ax = fig.add_subplot(projection='3d')
+                # axes[0].scatter(aoa, lats[:, 0])
+                # axes[0].grid()
+                # axes[1].scatter(aoa, lats[:, 1])
+                # axes[1].grid()
+                # axes[2].scatter(aoa, lats[:, 2])
+                # axes[2].grid()
+                
+                ax.scatter(lats[:, 0], lats[:, 1], lats[:, 2])
+                
+                plt.tight_layout()
+                plt.show()
+                lats = None
+            
+            # for i in range(latents.shape[0]):
+            #     pass
+            #     # x = xy[i][:, 0]
+            #     # y = xy[i][:, 1]
+            
+            #     # triang = Triangulation(x, y)
+                
+            #     # axes[i, 0].tricontourf(triang, flow[i][:, 1], levels=100, cmap="jet")
+            #     # axes[i, 0].axis("off")
+            #     # axes[i, 0].set_title(f"Original Flowfield [{i+1}]")
+                
+            #     # axes[i, 1].tricontourf(triang, flow[i][:, 1], levels=100, cmap="jet")
+            #     # axes[i, 1].axis("off")
+            #     # axes[i, 1].set_title(f"Reconstructed Flowfield [{i+1}]")
+            #     axes[0].scatter(latents[i][0], latents[i][1])
+            #     axes[1].scatter(latents[i][0], latents[i][2])
+            #     axes[2].scatter(latents[i][1], latents[i][2])
+            # plt.tight_layout()
+            # plt.show()
+                
 if __name__ == "__main__":
     params = load_parameters()
     
@@ -114,4 +152,4 @@ if __name__ == "__main__":
     
     model_dict = fetch_model_dict(params, checkpoint)
     
-    visualise_vae(params, model_dict)
+    visualise_flowfield_reconstruction(params, model_dict)

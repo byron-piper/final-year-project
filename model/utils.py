@@ -1,9 +1,6 @@
 import logging
 import os
 
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-import numpy as np
 import torch
 
 def fetch_model_dict(params:dict, checkpoint:str, logger:logging.Logger=None):
@@ -34,4 +31,4 @@ def conv_transpose_output_size(input_size, kernel_size, stride, padding, output_
     return stride * (input_size - 1) + kernel_size - 2 * padding + output_padding
 
 if __name__ == "__main__":
-    print(conv_transpose_output_size(107, 3, 3, 1, 1))
+    print(conv_transpose_output_size(input_size=80, kernel_size=3, stride=2, padding=1, output_padding=1))
