@@ -82,9 +82,9 @@ def run_solver(params:dict) -> None:
     freestream_viscosity = params["solver"]["freestream_viscosity"]
     iterations = params["solver"]["iterations"]
     
-    meshes_folder = params["i/o"]["meshes_folder"]
+    meshes_folder = os.path.join(params["i/o"]["meshes_folder"], "study")
     cases_folder = params["i/o"]["cases_folder"]
-    results_folder = os.path.join(params["i/o"]["results_folder"], "fluent")
+    results_folder = os.path.join(params["i/o"]["results_folder"], "study")
     logs_folder = os.path.join(params["i/o"]["logs_folder"], "solver")
 
     #endregion
@@ -104,6 +104,12 @@ def run_solver(params:dict) -> None:
     logging.info(f"[-/-] : - | Freestream velocity = '{freestream_velocity}'")
 
     angle_of_attacks = np.linspace(-5, 30, 15)
+    
+    angle_of_attacks = [
+        np.linspace(5, 7.5, 10),
+        np.linspace(10, 12.5, 10),
+        np.linspace(10, 12.5, 10)
+    ]
     
     # Walk through each subfolder within the import location and look for three '.txt. files containing
     # coordinates for each aerofoil element. Save the name of the folder and its absolute path
@@ -134,9 +140,10 @@ def run_solver(params:dict) -> None:
 
             inlet = configure_solver_settings(solver, iterations)
 
-            for j, aoa in enumerate(angle_of_attacks):
+            print(angle_of_attacks[i])
+            for j, aoa in enumerate(angle_of_attacks[i]):
                 start_time = datetime.now()
-                progress = f"[{completed_loops}/{len(angle_of_attacks)*len(meshes)}]"
+                progress = f"[{completed_loops}/{len(angle_of_attacks[i])*len(meshes)}]"
                 mesh_results_filename = os.path.join(mesh_results_folder, f"{str(aoa)}.csv")
                 mesh_cl_filename = os.path.join(mesh_results_folder, f"cl_{str(aoa)}.out")
                 mesh_cd_filename = os.path.join(mesh_results_folder, f"cd_{str(aoa)}.out")
@@ -185,13 +192,13 @@ def run_solver(params:dict) -> None:
 
                 logging.info(f"{progress} : {mesh_name} | Saving results to '{mesh_results_filename}'...")
                 solver.settings.file.export.ascii(
-                file_name=mesh_results_filename,
-                surface_name_list=["interior:fluid"],
-                cell_func_domain=[
-                    "pressure-coefficient",
-                    "velocity-magnitude",
-                    "vorticity-mag"
-                ]
+                    file_name=mesh_results_filename,
+                    surface_name_list=["interior:fluid"],
+                    cell_func_domain=[
+                        "pressure-coefficient",
+                        "velocity-magnitude",
+                        "vorticity-mag"
+                    ]
                 )
 
                 logging.info(f"{progress} : {mesh_name} | Saving case file to '{mesh_case_filename}'...")
@@ -200,7 +207,7 @@ def run_solver(params:dict) -> None:
                 end_time = datetime.now()
                 time_elapsed = end_time - start_time
                 cumulative_time += time_elapsed.seconds
-                meshes_remaining = (len(angle_of_attacks)*len(meshes)) - (completed_loops)
+                meshes_remaining = (len(angle_of_attacks[i])*len(meshes)) - (completed_loops)
                 avg_time_per_iteration = cumulative_time / (completed_loops)
                 estimated_time_remaining = timedelta(seconds=(avg_time_per_iteration * meshes_remaining))
 

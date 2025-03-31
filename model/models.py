@@ -1,6 +1,10 @@
 import torch
 from torch import nn
-from torch_geometric import nn as nng
+from torch_geometric.nn import GCNConv
+from torch_geometric.utils import softmax, scatter
+import torch.nn.functional as F
+from torch_geometric.nn import SAGEConv, TopKPooling, global_mean_pool, global_max_pool
+from torch_geometric.nn.models import GAE, InnerProductDecoder
 
 class Reshape(nn.Module):
     def __init__(self, *args):
@@ -131,48 +135,47 @@ class ConvAutoencoderLinear(nn.Module):
         super().__init__()    
         self.encoder = nn.Sequential(
             nn.Conv2d(5, 16, kernel_size=3, stride=2, padding=1),  # 160x160
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1), # 80x80
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1), # 40x40
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1), # 20x20
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1), # 10x10
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU()
         )
 
         self.fc_enc = nn.Sequential(
             nn.Flatten(),
             nn.Linear(25600, 2048), # 10x10x256
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Linear(2048, 512), # 10x10x256
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Linear(512, 128)  # Latent vector
         )
 
         self.fc_dec = nn.Sequential(
             nn.Linear(128, 512),
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Linear(512, 2048),
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Linear(2048, 25600),
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.Unflatten(1, (256, 10, 10))
         )
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1), # 20x20
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1), # 40x40
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),  # 80x80
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.ConvTranspose2d(32, 16, kernel_size=3, stride=2, padding=1, output_padding=1),   # 160x160
-            nn.ELU(alpha=1.0, inplace=True),
+            nn.ReLU(),
             nn.ConvTranspose2d(16, 5, kernel_size=3, stride=2, padding=1, output_padding=1),   # 320x320
-            Trim(),
-            nn.Tanh()
+            nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -209,6 +212,56 @@ class Autoencoder(nn.Module):
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
         return decoded
+
+class GlobalAttention(torch.nn.Module):
+    r"""Global soft attention layer from the `"Gated Graph Sequence Neural
+    Networks" <https://arxiv.org/abs/1511.05493>`_ paper
+
+    .. math::
+        \mathbf{r}_i = \sum_{n=1}^{N_i} \mathrm{softmax} \left(
+        h_{\mathrm{gate}} ( \mathbf{x}_n ) \right) \odot
+        h_{\mathbf{\Theta}} ( \mathbf{x}_n ),
+
+    where :math:`h_{\mathrm{gate}} \colon \mathbb{R}^F \to
+    \mathbb{R}` and :math:`h_{\mathbf{\Theta}}` denote neural networks, *i.e.*
+    MLPS.
+
+    Args:
+        gate_nn (torch.nn.Module): A neural network :math:`h_{\mathrm{gate}}`
+            that computes attention scores by mapping node features :obj:`x` of
+            shape :obj:`[-1, in_channels]` to shape :obj:`[-1, 1]`, *e.g.*,
+            defined by :class:`torch.nn.Sequential`.
+        nn (torch.nn.Module, optional): A neural network
+            :math:`h_{\mathbf{\Theta}}` that maps node features :obj:`x` of
+            shape :obj:`[-1, in_channels]` to shape :obj:`[-1, out_channels]`
+            before combining them with the attention scores, *e.g.*, defined by
+            :class:`torch.nn.Sequential`. (default: :obj:`None`)
+    """
+
+    def __init__(self, gate_nn, nn=None):
+        super(GlobalAttention, self).__init__()
+        self.gate_nn = gate_nn
+        self.nn = nn
+
+
+    def forward(self, x, batch, size=None):
+        """"""
+        x = x.unsqueeze(-1) if x.dim() == 1 else x
+        size = batch[-1].item() + 1 if size is None else size
+
+        gate = self.gate_nn(x).view(-1, 1)
+        x = self.nn(x) if self.nn is not None else x
+        assert gate.dim() == x.dim() and gate.size(0) == x.size(0)
+
+        gate = softmax(src=gate, index=batch, num_nodes=size)
+        out = scatter(reduce='add', src=gate * x, index=batch, dim_size=size)
+
+        return out
+
+
+    def __repr__(self):
+        return '{}(gate_nn={}, nn={})'.format(self.__class__.__name__,
+                                              self.gate_nn, self.nn)
 
 class GCCN(nn.Module):
     def __init__(self, in_channels):
@@ -262,90 +315,239 @@ class GCCN(nn.Module):
                 
         return x
 
-class GCCNLinear(nn.Module):
-    def __init__(self, in_channels):
-        super(GCCNLinear, self).__init__()
+class GCNLinear(nn.Module):
+    def __init__(self, in_channels, hid_channels, emb_channels):
+        super(GCNLinear, self).__init__()
 
-        self.global_pool = nng.global_mean_pool
-
+        self.in_channels = in_channels
+        self.hid_channels = hid_channels
+        self.emb_channels = emb_channels
+        
         self.encoder = nn.Sequential(
-            nng.GCNConv(in_channels=in_channels, out_channels=64),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2),
-            nng.GCNConv(in_channels=64, out_channels=128),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2),
-            nng.GCNConv(in_channels=128, out_channels=64),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2)
+            GCNConv(in_channels=in_channels, out_channels=hid_channels),
+            nn.BatchNorm1d(hid_channels),
+            nn.ReLU(),
+            GCNConv(in_channels=hid_channels, out_channels=hid_channels),
+            nn.BatchNorm1d(hid_channels),
+            nn.ReLU(),
+            GCNConv(in_channels=hid_channels, out_channels=hid_channels),
+            nn.BatchNorm1d(hid_channels),
+            nn.ReLU(),
+            GCNConv(in_channels=hid_channels, out_channels=hid_channels),
+            nn.BatchNorm1d(hid_channels),
+            nn.ReLU()
         )
         
         self.fc_latent = nn.Sequential(
-            nn.Linear(64, 32),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2),
-            nn.Linear(32, 3)
+            nn.Linear(hid_channels, hid_channels//2),
+            nn.ReLU(),
+            nn.Linear(hid_channels//2, emb_channels)
         )
     
         self.fc_decoder = nn.Sequential(
-            nn.Linear(3, 32),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2),
-            nn.Linear(32, 64),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2)
+            nn.Linear(emb_channels, hid_channels//2),
+            nn.ReLU(),
+            nn.Linear(hid_channels//2, hid_channels),
+            nn.ReLU()
         )
         
         self.decoder = nn.Sequential(
-            nng.GCNConv(64, 128),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2),
-            nng.GCNConv(128, 64),
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2),
-            nng.GCNConv(64, in_channels), 
-            nn.LeakyReLU(0.01),
-            nn.Dropout(p=0.2),
-            nn.Tanh()
+            GCNConv(in_channels=hid_channels, out_channels=hid_channels),
+            nn.BatchNorm1d(hid_channels),
+            nn.ReLU(),
+            GCNConv(in_channels=hid_channels, out_channels=hid_channels),
+            nn.BatchNorm1d(hid_channels),
+            nn.ReLU(),
+            GCNConv(in_channels=hid_channels, out_channels=hid_channels),
+            nn.BatchNorm1d(hid_channels),
+            nn.ReLU(),
+            GCNConv(in_channels=hid_channels, out_channels=in_channels),
+            nn.Sigmoid()
         )
-
-    def forward(self, data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
         
-        batch = torch.arange(data.x.size(0), device=data.x.device)
-
-        # Encode
+    def get_channels(self):
+        return self.in_channels, self.hid_channels, self.emb_channels
+        
+    def encode(self, x, edge_index, batch_index):
+        # Apply convolutional layers, 
+        # N : [batch_size * num_features, 5]  ->
+        # N:  [64, 64]
         for layer in self.encoder:
-            if isinstance(layer, nng.GCNConv):
+            if isinstance(layer, GCNConv):
                 x = layer(x, edge_index)
             else:
                 x = layer(x)
-                
+
+        # Apply global mean pooling to get vector representation
+        # N : [64, 64] ->
+        # N : [batch_size, 64]
+        x = global_mean_pool(x, batch_index)
+        
+        # Apply dense layers
+        # N : [batch_size, 64] ->
+        # N : [batch_size, 3]
         x = self.fc_latent(x)
-        x = nng.global_max_pool(x, batch)
+        
+        return x
+        
+    def decode(self, x, edge_index, batch_index):
+        #x = x[batch_index]
+        
+        # Dense layers -> x.shape = [5, 64]
         x = self.fc_decoder(x)
         
-        # Decode
+        # Inverse pooling? -> x.shape = [500000x64]
+        x = x[batch_index]
+         
+        # decode
         for layer in self.decoder:
-            if isinstance(layer, nng.GCNConv):
+            if isinstance(layer, GCNConv):
                 x = layer(x, edge_index)
             else:
                 x = layer(x)
-                
+
         return x
-    
-    def compute_latents(self, batch):
-        x, edge_index, batch = batch.x, batch.edge_index, batch.batch
+
+    def forward(self, data):
+        x, edge_index, batch_index = data.x, data.edge_index, data.batch
         
-        # Encode
-        for i, layer in enumerate(self.encoder):
-            if isinstance(layer, nng.GCNConv):
+        embedding = self.encode(x, edge_index, batch_index)
+        x = self.decode(embedding, edge_index, batch_index)
+                
+        return x, embedding 
+
+class VGAE(nn.Module):
+    def __init__(self):
+        super(VGAE, self).__init__()
+        
+        self.encoder = nn.Sequential(
+            GCNConv(in_channels=5, out_channels=32),
+            nn.ReLU(),
+            GCNConv(in_channels=32, out_channels=32),
+            nn.ReLU(),
+            GCNConv(in_channels=32, out_channels=32),
+            nn.ReLU(),
+            GCNConv(in_channels=32, out_channels=32),
+            nn.ReLU()
+        )
+        
+        self.embed_mu = nn.Sequential(
+            nn.Linear(in_features=32, out_features=16),
+            nn.ReLU(),
+            nn.Linear(in_features=16, out_features=3)
+        )
+        
+        self.embed_sigma = nn.Sequential(
+            nn.Linear(in_features=32, out_features=16),
+            nn.ReLU(),
+            nn.Linear(in_features=16, out_features=3)
+        )
+        
+        self.unembed = nn.Sequential(
+            nn.Linear(in_features=3, out_features=16),
+            nn.ReLU(),
+            nn.Linear(in_features=16, out_features=32),
+            nn.ReLU()
+        )
+        
+        self.decoder = nn.Sequential(
+            GCNConv(in_channels=32, out_channels=32),
+            nn.ReLU(),
+            GCNConv(in_channels=32, out_channels=32),
+            nn.ReLU(),
+            GCNConv(in_channels=32, out_channels=32),
+            nn.ReLU(),
+            GCNConv(in_channels=32, out_channels=5),
+            nn.ReLU()
+        )
+        
+        self.pooling = global_mean_pool
+        
+    def encode(self, x, edge_index, batch_index):
+        for layer in self.encoder:
+            if isinstance(layer, GCNConv):
                 x = layer(x, edge_index)
             else:
                 x = layer(x)
-                
-        x = self.fc_latent(x)
         
-        x = nng.global_mean_pool(x, batch)
-                
-        return x   
+        mu = self.embed_mu(x)
+        sigma = self.embed_sigma(x)
+        
+        mu = self.pooling(mu, batch_index)
+        sigma = self.pooling(sigma, batch_index)
+        
+        return mu, sigma
+    
+    def reparameterize(self, mu, sigma):
+        std = torch.exp(0.5 * sigma)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+    
+    def decode(self, z, edge_index, batch_index):
+        z = z[batch_index]
+        
+        z = self.unembed(z)
+        for layer in self.decoder:
+            if isinstance(layer, GCNConv):
+                z = layer(z, edge_index)
+            else:
+                z = layer(z)
+        
+        return z
+    
+    def forward(self, data):
+        x, edge_index, batch_index = data.x, data.edge_index, data.batch
+        
+        mu, sigma = self.encode(x, edge_index, batch_index)
+        z = self.reparameterize(mu, sigma)
+        x_recon = self.decode(z, edge_index, batch_index)
+        return x_recon, mu, sigma
+
+class GraphAutoencoder(nn.Module):
+    def __init__(self, in_channels, hidden_dim, latent_dim, k=0.5):
+        super(GraphAutoencoder, self).__init__()
+        self.in_channels = in_channels
+        self.hidden_dim = hidden_dim
+        self.latent_dim = latent_dim
+        
+        # Encoder
+        self.conv1 = SAGEConv(self.in_channels, self.hidden_dim)
+        #self.pool1 = TopKPooling(self.hidden_dim, ratio=k)
+        
+        self.conv2 = SAGEConv(self.hidden_dim, self.hidden_dim)
+        #self.pool2 = TopKPooling(self.hidden_dim, ratio=k)
+        
+        self.fc_latent = nn.Linear(self.hidden_dim*2, self.latent_dim)  # Latent representation
+        
+        # Decoder
+        self.fc_decode = nn.Linear(self.latent_dim, self.hidden_dim*2)
+        self.deconv1 = SAGEConv(self.hidden_dim, self.hidden_dim)
+        self.deconv2 = SAGEConv(self.hidden_dim, self.in_channels)
+        
+    def forward(self, x, edge_index, batch):
+        # Encoder
+        x = F.relu(self.conv1(x, edge_index))
+        print(x.shape)
+        #x, edge_index, _, batch, _, _ = self.pool1(x, edge_index, None, batch)
+        #pooled1 = torch.cat([global_mean_pool(x, batch), global_max_pool(x, batch)], dim=1)
+        
+        x = F.relu(self.conv2(x, edge_index))
+        print(x.shape)
+        #x, edge_index, _, batch, _, _ = self.pool2(x, edge_index, None, batch)
+        pooled = torch.cat([global_mean_pool(x, batch), global_max_pool(x, batch)], dim=1)
+        print(pooled.shape)
+        # Skip connection
+        embedding = self.fc_latent(pooled)
+        print(embedding.shape)
+        
+        # Decoder
+        x = F.relu(self.fc_decode(embedding))
+        print(x.shape)
+        x = x.view(-1, self.hidden_dim)
+        print(x.shape)
+        x = F.relu(self.deconv1(x, edge_index))
+        print(x.shape)
+        x = self.deconv2(x, edge_index)
+        print(x.shape)
+        
+        return x, embedding

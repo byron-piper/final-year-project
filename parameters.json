@@ -44,21 +44,23 @@
 		"iterations": 500
 	},
     "preprocess": {
-		"flowfield_dim": 320,
-        "visualise": false,
+		"downsampled_nodes": 100000,
+        "num_neighbours_per_node": 3,
         "train_batch_size": 645
 	},
     "training": {
-        "checkpoint": null,
+        "num_epochs": 50,
         "batch_size": 5,
         "learning_rate": 1e-4,
-        "weight_decay": 1e-5,
-        "num_epochs": 20,
+        "weight_decay": 1e-4,
         "logging_interval": 1,
-        "saving_interval": 10
+        "saving_interval": 10,
+        "save_model": true
     },
     "model": {
-        "checkpoint": "checkpoint.pt"
+        "in_channels": 5,
+        "hid_channels": 256,
+        "emb_channels": 3
     },
 	"i/o": {
 		"coords_folder": "C:\\Users\\honey\\Documents\\PROJECT\\coordinates",

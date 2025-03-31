@@ -4,7 +4,11 @@ import gzip
 import logging
 import os
 from pathlib import Path
+import random
 import sys
+from tqdm import tqdm
+
+import gmsh
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,16 +16,18 @@ from scipy.spatial import KDTree
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import kneighbors_graph
 from sklearn.preprocessing import MinMaxScaler
+from scipy.interpolate import interp1d
 import torch
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from tsdownsample import MinMaxLTTBDownsampler
+from matplotlib.tri import Triangulation
 
 sys.path.append(r"C:\Users\honey\Documents\PROJECT\final-year-project")
 
 from sample.helper import load_parameters
 
-def _minmax_lttb_downsampling(flowfield:np.ndarray, nodes_out:int) -> tuple[np.ndarray, np.ndarray]:
+def _minmax_lttb_downsampling(flowfield:np.ndarray, downsampled_nodes:int) -> tuple[np.ndarray, np.ndarray]:
     #region docstring
     """
     Downsamples flowfield nodes given in Numpy array (x, y, cp, v, ω) to reduced node count.
@@ -47,7 +53,7 @@ def _minmax_lttb_downsampling(flowfield:np.ndarray, nodes_out:int) -> tuple[np.n
     y = np.ascontiguousarray(flowfield[:, 1])
     
     # Apply downsampling algorithm
-    downsampled_indicies = MinMaxLTTBDownsampler().downsample(x, y, n_out=nodes_out, parallel=True)
+    downsampled_indicies = MinMaxLTTBDownsampler().downsample(x, y, n_out=downsampled_nodes, parallel=True)
     
     # Create a new 2D array containing downsampled (x, y) coordinates
     downsampled_coordinates = np.column_stack((x[downsampled_indicies], y[downsampled_indicies]))
@@ -58,7 +64,7 @@ def _minmax_lttb_downsampling(flowfield:np.ndarray, nodes_out:int) -> tuple[np.n
     downsampled_flowfield = flowfield[mask]
     removed_nodes = flowfield[~mask]
     
-    while(len(downsampled_flowfield) > nodes_out):
+    while(len(downsampled_flowfield) > downsampled_nodes):
         downsampled_flowfield = np.delete(downsampled_flowfield, 0, axis=0)
     
     # Return both the downsampled flowfield array and the removed nodes
@@ -370,119 +376,372 @@ def generate_fluent_datasets(params:dict, compute_downsample_nodes:bool=False, v
                 
     #endregion
 
-class _FlowFieldDataset(Dataset):
-    def __init__(self, root_dir, train=True, transform=None):
-        self.root_dir = root_dir
-        self.transform = transform
-        self.data_info = []
-        
-        root_dir = os.path.join(root_dir, "train" if train else "test")
-        
-        for aerofoil_path in glob.glob(os.path.join(root_dir, "*")):
-            if not os.path.isdir(aerofoil_path): continue
-            
-            for aoa_path in glob.glob(os.path.join(aerofoil_path, "*")):
-                if not os.path.isdir(aoa_path): continue
-                
-                aoa = float(os.path.basename(aoa_path))
-                
-                self.data_info.append((
-                    glob.glob(os.path.join(aoa_path, "*.npy.gz")),
-                    aoa
-                ))
-        
-        for label in os.listdir(root_dir):
-            label_path = os.path.join(root_dir, label)
-            if not os.path.isdir(label_path):
-                continue
-            for file in os.listdir(label_path):
-                if file.endswith(".npy.gz"):
-                    file_path = os.path.join(label_path, file)
-                    aoa = float(file.replace(".npy.gz", ""))
-                    self.data_info.append((file_path, aoa))
-                    
-    def __len__(self):
-        return len(self.data_info)
+def process_flowfield_results(params:dict, compute_downsampled_nodes:bool=False) -> list[tuple]:
+    #region # ==== UNPACK PARAMETERS ==== #
     
-    def __getitem__(self, idx):
-        file_path, angle = self.data_info[idx]
-        
-        with gzip.open(file_path, "r") as f:
-            data = np.load(f) 
-        
-        data = (data - np.min(data)) / (np.max(data) - np.min(data))
-           
-        col_min = np.min(data, axis=0)
-        col_max = np.max(data, axis=0)
-        
-        denom = col_max - col_min
-        denom[denom == 0] = 1
-        
-        data = (data - col_min) / denom
-        
-        scaler = MinMaxScaler(feature_range=(-1, 1))
-        
-        xy = data[:, :2]
-        
-        data = scaler.fit_transform(data)
-        
-        data = torch.tensor(data, dtype=torch.float32)
-        
-        if self.transform:
-            data = self.transform(data)
-            
-        return data, xy, angle
+    # Pre-process
+    downsampled_nodes = params["preprocess"]["downsampled_nodes"]
+    train_batch_size = params["preprocess"]["train_batch_size"]
+    num_neighbours_per_node = params["preprocess"]["num_neighbours_per_node"]
 
-class FlowField(Dataset):
-    def __init__(self, root_dir, train=True, transform=None):
+    # I/O
+    coords_folder = params["i/o"]["coords_folder"]
+    results_folder = os.path.join(params["i/o"]["results_folder"], "fluent") # Results stored in 'fluent' subfolder
+    datasets_folder = params["i/o"]["datasets_folder"]
+    
+    #endregion
+
+    #region # ==== FETCH DOWNSAMPLING NODES COUNT ==== #
+    # Determine the number of nodes used to downsample from each flowfield to unify mesh node count
+    logging.info("[-/-] : - | Settings downsampling size to default: 100000 nodes.")
+    if compute_downsampled_nodes:
+        logging.info("[-/-] : - | Computing number of downsampled flowfield nodes...")
+        #region # ==== COMPUTE SAMPLE SIZE IN FLOW-FIELD RESULTS ==== #
+    
+        # Each flowfield mesh generated for each aerofoil have differing number of mesh nodes.
+        # Therefore, the effective "image" loaded into the VAE will not be fixed. To recify this,
+        # all flowfields are downsampled based on the minimum number of nodes from all flowfields
+        # to achieve equal sizes.
+        # 
+        # Min mesh nodes from results (iteration 1): 360925
+        
+        for root, _, files in os.walk(results_folder):
+            csv_files = [os.path.join(root, f) for f in files if f.split(".")[-1] == "csv"]
+            if csv_files:
+                # Get first '.csv' as each AoA have equal number of mesh nodes
+                first_csv_file = csv_files[0]
+                with open(first_csv_file, "r") as file:
+                    node_count = len(file.readlines())
+                    if downsampled_nodes > node_count:
+                        downsampled_nodes = node_count
+
+        logging.info(f"[-/-] : - | Calculated number of flowfield nodes: {downsampled_nodes}")
+    #endregion
+    elif params["preprocess"]["downsampled_nodes"] > 0:
+        downsampled_nodes = params["preprocess"]["downsampled_nodes"]
+        logging.info(f"[-/-] : - | Downsampling flowfield nodes taken from parameters: {downsampled_nodes}")
+    #endregion
+
+    #region # ==== METHODS ==== #
+
+    def fetch_coefficients(filepath:str, iteration_cutoff:int=250):
+        with open(filepath, "r") as f:
+            data = np.array([line.strip().split()[1:] for line in f.readlines()[3:]], dtype=float)
+
+        if len(data) <= iteration_cutoff:
+            data = data[-1][0]
+        else:
+            data = np.mean(data[iteration_cutoff-1:], axis=0)[0]
+        
+        return data
+    
+    def fetch_flowfield(filepath:str):
+        with open(filepath, "r") as f:
+            flowfield = np.array([line.strip().split()[1:] for line in f.readlines()[1:]], dtype=float)
+        
+        return flowfield
+        
+    def fetch_graph_edges(flowfield:np.ndarray, num_neighbours_per_node:int):
+        xy = flowfield[:, :2]
+        
+        adj_matrix = kneighbors_graph(
+            xy, 
+            n_neighbors=num_neighbours_per_node, 
+            mode='connectivity', 
+            include_self=False
+        )
+        edges = np.array(adj_matrix.nonzero(), dtype=np.long)
+        
+        return edges
+
+    #endregion
+
+    logging.info(f"[-/-] : - | Fetching all results in: '{results_folder}'...")
+    aerofoil_folders = [f for f in glob.glob(os.path.join(results_folder, "*")) if os.path.isdir(f)]
+    
+    completed_loops = 1
+    scaler = MinMaxScaler()
+    for aerofoil_folder in tqdm(aerofoil_folders, desc="Generating flowfield datasets"):
+        aerofoil_id = os.path.basename(aerofoil_folder)
+        dest_folder = os.path.join(
+            datasets_folder,
+            "train" if completed_loops <= train_batch_size else "test",
+            aerofoil_id
+        )
+        Path(dest_folder).mkdir(parents=True, exist_ok=True)
+        
+        csv_files = glob.glob(os.path.join(aerofoil_folder, "*.csv"))
+        logging.info(f"[{completed_loops}/{len(aerofoil_folders)*15}] : {aerofoil_id} | {len(csv_files)} flowfield files found.")
+        
+        cl_out_files = [f for f in sorted(glob.glob(os.path.join(aerofoil_folder, "*.out")), key=lambda x: float(os.path.basename(x)[3:-4])) if "cl" in f]
+        cd_out_files = [f for f in sorted(glob.glob(os.path.join(aerofoil_folder, "*.out")), key=lambda x: float(os.path.basename(x)[3:-4])) if "cd" in f]
+        
+        coeffs = np.column_stack((
+            [fetch_coefficients(f) for f in cl_out_files],
+            [fetch_coefficients(f) for f in cd_out_files]
+        ))
+        
+        logging.info(f"[{completed_loops}/{len(aerofoil_folders)*15}] : {aerofoil_id} | Aerodynamic [CL|CD] coefficients fetched.")
+        
+        coeffs_filepath = os.path.join(
+            datasets_folder,
+            "train" if completed_loops <= train_batch_size else "test",
+            aerofoil_id,
+            "coefficients.npy.gz"
+        )
+        
+        f = gzip.GzipFile(coeffs_filepath, "wb")
+        np.save(file=f, arr=coeffs)
+            
+        for csv_file in tqdm(csv_files, leave=False):
+            flowfield = fetch_flowfield(filepath=csv_file)
+            
+            # Convert velocity channel to mach number
+            flowfield[:, 3] = flowfield[:, 3] / np.sqrt(1.4 * 287 * 288.16) # gamma * R * T, taken from Fluent reference values
+            
+            # Check if maximum mach number in flowfield exceeds incompressible limit (>0.3)
+            max_mach = np.max(flowfield[:, 3], axis=0)
+            if max_mach > 0.3:
+                logging.warning(f"Flow in flowfield '{csv_file}' exceeds incompressible limit with maximum mach number = {max_mach}")
+            
+            # Get aerofoil coordinates
+            with open(os.path.join(coords_folder, aerofoil_id, "base.txt"), "r") as f:
+                base_coords = np.array([l.rstrip().split()[1:] for l in f.readlines()[1:]], dtype=float)
+            with open(os.path.join(coords_folder, aerofoil_id, "flap.txt"), "r") as f:
+                flap_coords = np.array([l.rstrip().split()[1:] for l in f.readlines()[1:]], dtype=float)
+            with open(os.path.join(coords_folder, aerofoil_id, "slat.txt"), "r") as f:
+                slat_coords = np.array([l.rstrip().split()[1:] for l in f.readlines()[1:]], dtype=float)
+                
+            len_base_coords = len(base_coords)
+            len_flap_coords = len(flap_coords)
+            len_slat_coords = len(slat_coords)
+            
+            coords = np.concat((base_coords, flap_coords, slat_coords, flowfield[:, :2]))
+
+            # Normalise coordinates
+            coords = scaler.fit_transform(coords)
+            
+            # Divide coordinates back to aerofoil elements
+            normalised_base_coords = coords[:len_base_coords]
+            normalised_flap_coords = coords[len_base_coords:len_base_coords+len_flap_coords]
+            normalised_slat_coords = coords[len_base_coords+len_flap_coords:len_base_coords+len_flap_coords+len_slat_coords]
+
+            # Normalise flowfield data to {0, 1} range
+            flowfield = scaler.fit_transform(flowfield)
+            
+            downsampled_flowfield, removed_nodes = _minmax_lttb_downsampling(flowfield=flowfield, downsampled_nodes=downsampled_nodes)
+            logging.info(f"[{completed_loops}/{len(aerofoil_folders)*15}] : {aerofoil_id} | Downsampled flowfield from {len(flowfield)} to {len(downsampled_flowfield)} nodes...")
+            graph_edges = fetch_graph_edges(flowfield=downsampled_flowfield, num_neighbours_per_node=num_neighbours_per_node)
+            logging.info(f"[{completed_loops}/{len(aerofoil_folders)*15}] : {aerofoil_id} | Generated '{graph_edges.shape[1]}' graph edges from flowfield nodes.")
+
+            aoa = ".".join(os.path.basename(csv_file).split(".")[:-1])
+            
+            dest_folder = os.path.join(
+                datasets_folder, 
+                "train" if completed_loops <= train_batch_size else "test",
+                aerofoil_id,
+                aoa
+            )
+           
+            Path(dest_folder).mkdir(parents=True, exist_ok=True)
+        
+            flowfield_filename = os.path.join(dest_folder, "flowfield.npy.gz")
+            removed_nodes_filename = os.path.join(dest_folder, "removed_nodes.npy.gz")
+            edges_filename = os.path.join(dest_folder, "edges.npy.gz")
+
+            logging.info(f"[{completed_loops}/{len(aerofoil_folders)*15}] : {aerofoil_id} | Saving dataset to '{dest_folder}'...")
+            f = gzip.GzipFile(flowfield_filename, "wb")
+            np.save(file=f, arr=downsampled_flowfield)
+            f = gzip.GzipFile(removed_nodes_filename, "wb")
+            np.save(file=f, arr=removed_nodes)
+            f = gzip.GzipFile(edges_filename, "wb")
+            np.save(file=f, arr=graph_edges)
+            
+            # Save normalised aerofoil coordinates only once per aerofoil
+            logging.info(aoa)
+            if aoa == "0.0":
+                base_coords_path = os.path.join(
+                    datasets_folder,
+                    "train" if completed_loops <= train_batch_size else "test",
+                    aerofoil_id,
+                    "base_coords.npy.gz"
+                )
+                f = gzip.GzipFile(base_coords_path, "wb")
+                np.save(file=f, arr=normalised_base_coords)
+                flap_coords_path = os.path.join(
+                    datasets_folder,
+                    "train" if completed_loops <= train_batch_size else "test",
+                    aerofoil_id,
+                    "flap_coords.npy.gz"
+                )
+                f = gzip.GzipFile(flap_coords_path, "wb")
+                np.save(file=f, arr=normalised_flap_coords)
+                slat_coords_path = os.path.join(
+                    datasets_folder,
+                    "train" if completed_loops <= train_batch_size else "test",
+                    aerofoil_id,
+                    "slat_coords.npy.gz"
+                )
+                f = gzip.GzipFile(slat_coords_path, "wb")
+                np.save(file=f, arr=normalised_slat_coords)
+            
+            completed_loops += 1
+
+class FlowFieldTensor(Dataset):
+    def __init__(self, root_dir:str, train:bool=True, randomise:bool=True, transform=None):
         self.root_dir = root_dir
         self.transform = transform
         self.data_info = []
+        self.aoas = np.linspace(-5, 30, 15)
         
+        # Get root directory to fetch data from
         root_dir = os.path.join(root_dir, "train" if train else "test")
         
-        for aerofoil_path in glob.glob(os.path.join(root_dir, "*")):
-            if not os.path.isdir(aerofoil_path): continue
+        aerofoil_paths = [f for f in glob.glob(os.path.join(root_dir, "*")) if os.path.isdir(f)]
+        if randomise: random.shuffle(aerofoil_paths)
+        
+        for aerofoil_path in aerofoil_paths:       
+            aoa_paths = [f for f in glob.glob(os.path.join(aerofoil_path, "*")) if os.path.isdir(f)]
+            if randomise: random.shuffle(aoa_paths)
             
-            for aoa_path in glob.glob(os.path.join(aerofoil_path, "*")):
-                if not os.path.isdir(aoa_path): continue
-                
+            aerofoil_id = os.path.basename(aerofoil_path)      
+            flowfield_paths = []
+            
+            if not randomise: aoa_paths = sorted(aoa_paths, key=lambda x: float(os.path.basename(x)))
+            for aoa_path in aoa_paths:     
                 aoa = float(os.path.basename(aoa_path))
                 
-                self.data_info.append((
-                    glob.glob(os.path.join(aoa_path, "*.npy.gz")),
-                    aoa
+                flowfield_paths.append((
+                    os.path.join(aoa_path, "edges.npy.gz"),
+                    os.path.join(aoa_path, "flowfield.npy.gz"),
+                    aerofoil_id,
+                    aoa,
                 ))
+
+            coeffs_path = os.path.join(aerofoil_path, "coefficients.npy.gz")
+            if not os.path.exists(coeffs_path):
+                print(f"No coefficients exist in '{aerofoil_path}'!")
+
+            self.data_info.extend(
+                [(*item, coeffs_path) for item in flowfield_paths]
+            )
 
     def __len__(self):
         return len(self.data_info)
 
     def __getitem__(self, idx):
-        (edges_path, flowfield_path), angle = self.data_info[idx]
+        edges_path, flowfield_path, aerofoil_id, aoa, coeffs_path = self.data_info[idx]
         
         with gzip.open(flowfield_path, "r") as f:
             flowfield = np.load(f)
         with gzip.open(edges_path, "r") as f:
             edges = np.load(f)
+        with gzip.open(coeffs_path, "r") as f:
+            coeffs = np.load(f)
+
+        aoa_idx = np.where(aoa == self.aoas)[0][0]
+        coeffs = coeffs[aoa_idx]
         
-        xy = flowfield[:, :2]
-        flowfield = flowfield[:, 2:]
+        # Convert to PyTorch tensors
+        flowfield = torch.tensor(flowfield, dtype=torch.float)  # Flow variables as node features
+        #edges = torch.tensor(edges, dtype=torch.long)  # Edge list
+
+        coeffs = torch.tensor(coeffs, dtype=torch.float)
+
+        # Create torch_geometric Data object
+        #graph = Data(x=flowfield, edge_index=edges)
+        
+        return flowfield, aerofoil_id, aoa, coeffs
+
+class FlowField(Dataset):
+    def __init__(self, root_dir:str, train:bool=True, randomise:bool=True, transform=None, aoas:list[np.ndarray]=None):
+        self.root_dir = root_dir
+        self.transform = transform
+        self.data_info = []
+        if aoas is None: self.aoas = np.linspace(-5, 30, 15)
+        else: self.aoas = aoas
+        
+        # Get root directory to fetch data from
+        root_dir = os.path.join(root_dir, "train" if train else "test")
+        
+        aerofoil_paths = [f for f in glob.glob(os.path.join(root_dir, "*")) if os.path.isdir(f)]
+        if randomise: random.shuffle(aerofoil_paths)
+        
+        for aerofoil_path in aerofoil_paths:       
+            aoa_paths = [f for f in glob.glob(os.path.join(aerofoil_path, "*")) if os.path.isdir(f)]
+            if randomise: random.shuffle(aoa_paths)
+            
+            aerofoil_id = os.path.basename(aerofoil_path)      
+            flowfield_paths = []
+            
+            if not randomise: aoa_paths = sorted(aoa_paths, key=lambda x: float(os.path.basename(x)))
+            for aoa_path in aoa_paths:     
+                aoa = float(os.path.basename(aoa_path))
+                
+                flowfield_paths.append((
+                    os.path.join(aoa_path, "edges.npy.gz"),
+                    os.path.join(aoa_path, "flowfield.npy.gz"),
+                    aerofoil_id,
+                    aoa,
+                ))
+
+            coeffs_path = os.path.join(aerofoil_path, "coefficients.npy.gz")
+            if not os.path.exists(coeffs_path):
+                print(f"No coefficients exist in '{aerofoil_path}'!")
+            
+            base_coords_path = os.path.join(aerofoil_path, "base_coords.npy.gz")
+            flap_coords_path = os.path.join(aerofoil_path, "flap_coords.npy.gz")
+            slat_coords_path = os.path.join(aerofoil_path, "slat_coords.npy.gz")
+
+            self.data_info.extend(
+                [(*item, coeffs_path, base_coords_path, flap_coords_path, slat_coords_path) for item in flowfield_paths]
+            )
+
+    def __len__(self):
+        return len(self.data_info)
+
+    def __getitem__(self, idx):
+        edges_path, flowfield_path, aerofoil_id, aoa, coeffs_path, base_coords_path, flap_coords_path, slat_coords_path = self.data_info[idx]
+        
+        with gzip.open(flowfield_path, "r") as f:
+            flowfield = np.load(f)
+        with gzip.open(edges_path, "r") as f:
+            edges = np.load(f)
+        with gzip.open(coeffs_path, "r") as f:
+            coeffs = np.load(f)
+        with gzip.open(base_coords_path, "r") as f:
+            base_coords = np.load(f)
+        with gzip.open(flap_coords_path, "r") as f:
+            flap_coords = np.load(f)
+        with gzip.open(slat_coords_path, "r") as f:
+            slat_coords = np.load(f)
+            
+        # aerofoil_coords = (
+        #     torch.tensor(base_coords, dtype=torch.float),
+        #     torch.tensor(flap_coords, dtype=torch.float),
+        #     torch.tensor(slat_coords, dtype=torch.float)
+        # )
+
+        if isinstance(self.aoas, list):
+            aoa_idx = np.where(aoa == self.aoas[idx])[0][0]
+        else:
+            aoa_idx = np.where(aoa == self.aoas)[0][0]
+        coeffs = coeffs[aoa_idx]
         
         # Convert to PyTorch tensors
         flowfield = torch.tensor(flowfield, dtype=torch.float)  # Flow variables as node features
         edges = torch.tensor(edges, dtype=torch.long)  # Edge list
+        coeffs = torch.tensor(coeffs, dtype=torch.float)
 
         # Create torch_geometric Data object
         graph = Data(x=flowfield, edge_index=edges)
 
-        xy = torch.tensor(xy, dtype=torch.float)
-
-        return graph, xy
+        return graph, aerofoil_id, aoa, coeffs
 
 if __name__ == "__main__":
-    parameters = load_parameters()
+    params = load_parameters()
         
-    datasets_log_folder = os.path.join(parameters["i/o"]["logs_folder"], "datasets")
+    datasets_log_folder = os.path.join(params["i/o"]["logs_folder"], "datasets")
     
     if not os.path.exists(datasets_log_folder):
         os.mkdir(datasets_log_folder)
@@ -495,4 +754,4 @@ if __name__ == "__main__":
     logging.basicConfig(filename=log_filename, level=logging.INFO,
                         format="%(asctime)s - %(levelname)s - %(message)s")
     
-    generate_fluent_datasets(parameters)
+    process_flowfield_results(params)

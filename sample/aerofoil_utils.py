@@ -2,6 +2,7 @@ import math
 import os
 
 import gmsh
+import matplotlib.pyplot as plt
 import numpy as np
 from shapely.geometry import Polygon
 
@@ -76,7 +77,7 @@ def generate_naca4(chord:float=1, M:int=2, P:int=4, T:int=12, num_points:int=100
 
     return coords
 
-def generate_slat_coords(chord:float, coords:np.ndarray, slat_geom:dict) -> tuple[np.ndarray, np.ndarray]:
+def generate_slat_coords(chord:float, coords:np.ndarray, slat_geom:dict) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
     #region docstring
     """
     Generates (x, y) coordinates for leading edge slat from a given set of (x, y) aerofoil coordinates. Uses `slat_geom`
@@ -151,9 +152,11 @@ def generate_slat_coords(chord:float, coords:np.ndarray, slat_geom:dict) -> tupl
     # Create a numpy array storing the modified aerofoil coordinates without the slat geometry
     coords_wo_slat = np.concat((coords[:T_idx+1], bezier_TVWU, coords[U_idx:]))
 
+    control_points = [T, V, U, W, bezier_TVWU]
+
     # Remove points at sharp edges within small radius to prevent extremely small edges
     slat_coords = unsharpen_coord_inflection(slat_coords, 0, 0.0075)
-    slat_coords = unsharpen_coord_inflection(slat_coords, len(slat_leading_edge)-3, 0.01)
+    slat_coords = unsharpen_coord_inflection(slat_coords, len(slat_leading_edge)-3, 0.0075)
 
     #region # ==== APPLY TRANSFORMATIONS ==== #
 
@@ -176,9 +179,9 @@ def generate_slat_coords(chord:float, coords:np.ndarray, slat_geom:dict) -> tupl
     
     #endregion
 
-    return slat_coords, coords_wo_slat
+    return slat_coords, coords_wo_slat, control_points
 
-def generate_flap_coords(chord:float, coords:np.ndarray, flap_geom:dict) -> tuple[np.ndarray, dict]:
+def generate_flap_coords(chord:float, coords:np.ndarray, flap_geom:dict) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
 	#region docstring
     """
     Generates (x, y) coordinates for trailing edge fowler flap from a given set of (x, y) aerofoil coordinates. Uses `flap_geom`
@@ -303,6 +306,8 @@ def generate_flap_coords(chord:float, coords:np.ndarray, flap_geom:dict) -> tupl
     # Create a numpy array storing the modified aerofoil coordinates without the flap geometry
     coords_wo_flap = np.concat((coords[C_idx:S_idx], bezier_SS1P1P, bezier_BMNC[P_idx:][1:]))
 
+    control_points = [A, B, C, D, E, F, G, L, M, N, P, P1, S, S1]
+
     # Remove points at sharp edges within small radius to prevent extremely small edges
     coords_wo_flap = unsharpen_coord_inflection(coords_wo_flap, 0, 0.05)
     flap_coords = unsharpen_coord_inflection(flap_coords, 0, 0.005)
@@ -330,7 +335,7 @@ def generate_flap_coords(chord:float, coords:np.ndarray, flap_geom:dict) -> tupl
     coords_wo_flap = np.concat((coords_wo_flap, [coords_wo_flap[0]]))
     flap_coords = np.concat((flap_coords, [flap_coords[0]]))
 
-    return flap_coords, coords_wo_flap
+    return flap_coords, coords_wo_flap, control_points
 
 def normalise_aerofoil_coords(coords:list[np.ndarray], target_x:float) -> list[np.ndarray]:
     #region docstring
@@ -529,3 +534,127 @@ def visualise_aerofoil_coords(aerofoils:dict, tag:str=None, columns:int=3, open_
     gmsh.write("visualisation/aerofoils_visualised.geo_unrolled")
     if open_gmsh: gmsh.fltk.run()
     gmsh.finalize()
+
+def plot_naca_aerofoil(coords:np.ndarray, naca_digits:str):
+    chord = np.abs(np.max(coords[:, 0]) - np.min(coords[:, 0]))
+    
+    plt.plot(coords[:, 0], coords[:, 1], color="#000000")
+    plt.suptitle(f"NACA-{naca_digits} | Chord = {chord}")
+    plt.xlim((-0.05, 1.05))
+    plt.ylim((-0.25, 0.25))
+    plt.show()
+    
+def plot_aerofoil_evolution(coords:np.ndarray, naca_digits:str):
+    flap_params = {
+        "Bx": 0.7,
+        "By": 0.25,
+        "Cx": 0.6,
+        "Fx": 0.5,
+        "My": 0.5,
+        "Nx": 0.5,
+        "Ly": 0.8,
+        "Gx": 0.4,
+        "Px": 0.25,
+        "Sx": 0.5,
+        "P1x": 0.3,
+        "S1x": 0.25,
+        "x_offset": 0.01,
+        "y_offset": 0.05,
+        "deflection": 30
+    }
+    slat_params = {
+        "Tx": 0.3,
+        "Ux": 0.1,
+        "Vx": 0.5,
+        "Wx": 0.5,
+        "x_offset": 0.025,
+        "y_offset": 0.03,
+        "deflection": 25
+    }
+    
+    chord = np.abs(np.max(coords[:, 0]) - np.min(coords[:, 0]))
+    
+    flap_coords, base_coords, flap_control_points = generate_flap_coords(1, coords, flap_params)
+    slat_coords, base_coords, slat_control_points = generate_slat_coords(1, coords, slat_params)
+    
+    slat_gap_center = slat_coords[0]
+    theta = np.linspace(0, 2*np.pi, 100)
+    slat_gap_radius = slat_params["y_offset"]
+    slat_gap = np.column_stack((slat_gap_center[0]+slat_gap_radius*np.cos(theta), slat_gap_center[1]+slat_gap_radius*np.sin(theta)))
+    
+    fig, axs = plt.subplots(nrows=2, ncols=1)
+    axs[0].plot(coords[:, 0], coords[:, 1], color="#000000", zorder=1)
+    # Plot control point 'T'
+    axs[0].scatter(slat_control_points[0][0], slat_control_points[0][1], color="#FF0000", s=20, marker="D")
+    axs[0].text(slat_control_points[0][0]-0.02, slat_control_points[0][1]+0.01, f"T = {slat_params['Tx']}c", color="red", fontsize=11)
+    # Plot control point 'V'
+    axs[0].scatter(slat_control_points[1][0], slat_control_points[1][1], color="#FF0000", s=20, marker="D")
+    axs[0].text(slat_control_points[1][0]-0.02, slat_control_points[1][1]+0.01, f"V = {slat_params['Vx']}T", color="red", fontsize=11)
+    # Plot control point 'U'
+    axs[0].scatter(slat_control_points[2][0], slat_control_points[2][1], color="#FF0000", s=20, marker="D")
+    axs[0].text(slat_control_points[2][0]-0.015, slat_control_points[2][1]-0.015, f"U = {slat_params['Ux']}c", color="red", fontsize=11)
+    # Plot control point 'W'
+    axs[0].scatter(slat_control_points[3][0], slat_control_points[3][1], color="#FF0000", s=20, marker="D")
+    axs[0].text(slat_control_points[3][0]-0.02, slat_control_points[3][1]-0.015, f"W = {slat_params['Wx']}U", color="red", fontsize=11)
+    # Draw control point lines
+    axs[0].annotate("", xy=slat_control_points[1][:2], xytext=slat_control_points[0][:2],
+            arrowprops=dict(arrowstyle="->", color='red', lw=2))
+    axs[0].annotate("", xy=slat_control_points[3][:2], xytext=slat_control_points[2][:2],
+            arrowprops=dict(arrowstyle="->", color='red', lw=2))
+    # Plot bezier curve points
+    axs[0].scatter(slat_control_points[-1][:, 0], slat_control_points[-1][:, 1], color="#FF0000", s=2)
+    axs[0].axis([-0.05, 0.35, -0.075, 0.125])
+    
+    #region Annotate slat slot gap
+    axs[1].plot(slat_gap[:, 0], slat_gap[:, 1], color="#0044AA", linestyle="dashed", label=f"Slat slot gap = {slat_params['y_offset']}c")
+    axs[1].annotate(
+        "",
+        xy=[
+            slat_gap_center[0]+slat_gap_radius*np.cos(1.75*np.pi),
+            slat_gap_center[1]+slat_gap_radius*np.sin(1.75*np.pi)
+        ], 
+        xytext=slat_gap_center[:2],
+        arrowprops=dict(arrowstyle="->", color="#0044AA", lw=2)
+    )
+    #endregion
+    #region Annotate slat x-overlap
+    axs[1].plot(
+        [np.max(slat_coords[:, 0]), np.max(slat_coords[:, 0])], 
+        [np.max(slat_coords[:, 1]), base_coords[np.argmin(base_coords[:, 0]), 1]-0.005], 
+        color="#00AA55", linestyle="dashed", label=f"Slat x-overlap = {slat_params['x_offset']}c"
+    )
+    axs[1].annotate(
+        "",
+        xy=[
+            np.min(base_coords[:, 0]),
+            base_coords[np.argmin(base_coords[:, 0]), 1]
+        ], 
+        xytext=[
+            np.max(slat_coords[:, 0]),
+            base_coords[np.argmin(base_coords[:, 0]), 1]
+        ],
+        arrowprops=dict(arrowstyle="->", color="#00AA55", lw=2)
+    )
+    #endregion
+    #region Annotate deflection angle
+    axs[1].plot(
+        [np.min(slat_coords[:, 0])-0.02*np.cos(np.deg2rad(slat_params["deflection"])), np.min(slat_coords[:, 0])+0.1*np.cos(np.deg2rad(slat_params["deflection"]))], 
+        [slat_coords[np.argmin(slat_coords[:, 0]), 1]-0.02*np.sin(np.deg2rad(slat_params["deflection"])), slat_coords[np.argmin(slat_coords[:, 0]), 1]+0.1*np.sin(np.deg2rad(slat_params["deflection"]))],
+        color="#AA4488", linestyle="dashed", label=f"Deflection angle = {slat_params['deflection']}°"
+    )
+    axs[1].plot(
+        [np.min(slat_coords[:, 0])-0.02*np.cos(np.deg2rad(slat_params["deflection"])), np.min(slat_coords[:, 0])+0.1*np.cos(np.deg2rad(slat_params["deflection"]))], 
+        [slat_coords[np.argmin(slat_coords[:, 0]), 1], slat_coords[np.argmin(slat_coords[:, 0]), 1]],
+        color="#000000", linestyle="dashed"
+    )
+    #endregion
+    axs[1].plot(base_coords[:, 0], base_coords[:, 1], color="#000000")
+    axs[1].plot(slat_coords[:, 0], slat_coords[:, 1], color="#FF0000")
+    axs[1].axis([-0.15, 0.4, -0.2, 0.1])
+    axs[1].legend()
+    plt.suptitle(f"Slat coordinates generation example for NACA-{naca_digits}\nChord (c) = {chord}")
+    plt.show()
+    
+if __name__ == "__main__":
+    coords = generate_naca4()
+    plot_aerofoil_evolution(coords, "2412")

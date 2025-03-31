@@ -143,8 +143,8 @@ def generate_training_data(naca_batch_size:int, flap_batch_size:int, slat_batch_
     for naca_id, naca_coords in nacas.items():
         for slat_id, slat_params in slat_params_batch.items():
             for flap_id, flap_params in flap_params_batch.items():
-                slat_coords, base_coords = generate_slat_coords(1, naca_coords, slat_params)
-                flap_coords, base_coords = generate_flap_coords(1, base_coords, flap_params)
+                slat_coords, base_coords, _ = generate_slat_coords(1, naca_coords, slat_params)
+                flap_coords, base_coords, _ = generate_flap_coords(1, base_coords, flap_params)
                 combined_key = f"{naca_id}-{flap_id}-{slat_id}"
 
                 if aerofoil_elements_intersecting(base_coords, flap_coords, slat_coords):
